@@ -1,6 +1,7 @@
 ﻿using System.Runtime.InteropServices;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Tranga.BypassConnectors;
 using Tranga.LibraryConnectors;
 using Tranga.MangaConnectors;
 using Tranga.NotificationConnectors;
@@ -20,6 +21,7 @@ public static class TrangaSettings
     [JsonIgnore] public static string settingsFilePath => Path.Join(workingDirectory, "settings.json");
     [JsonIgnore] public static string libraryConnectorsFilePath => Path.Join(workingDirectory, "libraryConnectors.json");
     [JsonIgnore] public static string notificationConnectorsFilePath => Path.Join(workingDirectory, "notificationConnectors.json");
+    [JsonIgnore] public static string bypassConnectorsFilePath => Path.Join(workingDirectory, "bypassConnectors.json");
     [JsonIgnore] public static string jobsFolderPath => Path.Join(workingDirectory, "jobs");
     [JsonIgnore] public static string coverImageCache => Path.Join(workingDirectory, "imageCache");
     public static ushort? version { get; } = 2;
@@ -92,6 +94,27 @@ public static class TrangaSettings
                     new NotificationManagerJsonConverter(clone)
                 }
             })!;
+    }
+
+    public static HashSet<BypassConnector> LoadBypassConnectors(GlobalBase clone)
+    {
+        if (!File.Exists(bypassConnectorsFilePath))
+            return new HashSet<BypassConnector>();
+
+        try
+        {
+            string json = File.ReadAllText(bypassConnectorsFilePath);
+            if (string.IsNullOrEmpty(json))
+                return new HashSet<BypassConnector>();
+
+            HashSet<BypassConnector>? connectors = JsonConvert.DeserializeObject<HashSet<BypassConnector>>(json);
+            return connectors ?? new HashSet<BypassConnector>();
+        }
+        catch (Exception ex)
+        {
+            clone.logger?.WriteLine("TrangaSettings", $"Error loading bypass connectors: {ex.Message}");
+            return new HashSet<BypassConnector>();
+        }
     }
 
     public static void UpdateAprilFoolsMode(bool enabled)

@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
+using Tranga.BypassConnectors;
 using Tranga.Jobs;
 using Tranga.LibraryConnectors;
 using Tranga.MangaConnectors;
@@ -221,6 +222,16 @@ public class Server : GlobalBase
                 break;
             case "Settings/AprilFoolsMode":
                 SendResponse(HttpStatusCode.OK, response, TrangaSettings.aprilFoolsMode);
+                break;
+            case "BypassConnectors":
+                SendResponse(HttpStatusCode.OK, response, JsonConvert.SerializeObject(bypassConnectors));
+                break;
+            case "BypassConnectors/Byparr":
+                BypassConnector? byparrConnector = bypassConnectors.FirstOrDefault(bc => bc.bypassSolution == "Byparr");
+                if (byparrConnector is null)
+                    SendResponse(HttpStatusCode.NotFound, response);
+                else
+                    SendResponse(HttpStatusCode.OK, response, JsonConvert.SerializeObject(byparrConnector));
                 break;
             case "NotificationConnectors":
                 SendResponse(HttpStatusCode.OK, response, notificationConnectors);
@@ -649,6 +660,36 @@ public class Server : GlobalBase
                     break;
                 }
                 DeleteLibraryConnector(libraryConnectorType);
+                SendResponse(HttpStatusCode.Accepted, response);
+                break;
+            case "bypassConnector/Update":
+                if (!requestVariables.TryGetValue("bypassSolution", out string? bypassSolution) ||
+                    !requestVariables.TryGetValue("url", out string? bypassUrl))
+                {
+                    SendResponse(HttpStatusCode.BadRequest, response);
+                    break;
+                }
+                
+                // Get timeout parameter, default to 60 if not provided
+                int timeout = 60;
+                if (requestVariables.TryGetValue("timeout", out string? timeoutStr))
+                {
+                    if (!int.TryParse(timeoutStr, out timeout))
+                    {
+                        timeout = 60; // Default to 60 if parsing fails
+                    }
+                }
+                
+                AddBypassConnector(new BypassConnector(this, bypassSolution, bypassUrl, timeout));
+                SendResponse(HttpStatusCode.Accepted, response);
+                break;
+            case "bypassConnector/Reset":
+                if (!requestVariables.TryGetValue("bypassSolution", out string? bypassSolutionToReset))
+                {
+                    SendResponse(HttpStatusCode.BadRequest, response);
+                    break;
+                }
+                DeleteBypassConnector(bypassSolutionToReset);
                 SendResponse(HttpStatusCode.Accepted, response);
                 break;
             default:

@@ -3,6 +3,11 @@ using System.Net;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using Tranga.Jobs;
+using System.Linq;
+using System.Text;
+using System.Net.Http;
+using Newtonsoft.Json;
+using Tranga.BypassConnectors;
 
 namespace Tranga.MangaConnectors;
 
@@ -18,8 +23,41 @@ public class Manganato : MangaConnector
         Log($"Searching Publications. Term=\"{publicationTitle}\"");
         string sanitizedTitle = string.Join('_', Regex.Matches(publicationTitle, "[A-z]*").Where(str => str.Length > 0)).ToLower();
         string requestUrl = $"https://manganato.gg/search/story/{sanitizedTitle}";
-        RequestResult requestResult =
-            downloadClient.MakeRequest(requestUrl, RequestType.Default);
+
+        // Check if Byparr is configured
+        BypassConnector? byparrConnector = bypassConnectors.FirstOrDefault(bc => bc.bypassSolution == "Byparr");
+        if (byparrConnector is not null)
+        {
+            // Create Byparr request
+            var byparrRequest = new
+            {
+                cmd = "request.get",
+                url = requestUrl,
+                max_timeout = byparrConnector.timeout,
+            };
+
+            // Send request to Byparr
+            using HttpClient client = new();
+            var byparrResponse = client.PostAsync(byparrConnector.url,
+                new StringContent(JsonConvert.SerializeObject(byparrRequest), Encoding.UTF8, "application/json")).Result;
+
+            if (byparrResponse.IsSuccessStatusCode)
+            {
+                var byparrContent = byparrResponse.Content.ReadAsStringAsync().Result;
+                // Parse the JSON response to get the HTML content
+                var byparrJson = JsonConvert.DeserializeObject<dynamic>(byparrContent);
+                string htmlContent = byparrJson.solution.response;
+                
+                HtmlDocument doc = new();
+                doc.LoadHtml(htmlContent);
+                Manga[] publicationsarray = ParsePublicationsFromHtml(doc);
+                Log($"Retrieved {publicationsarray.Length} publications. Term=\"{publicationTitle}\"");
+                return publicationsarray;
+            }
+        }
+
+        // Fall back to normal request if Byparr is not configured or request failed
+        RequestResult requestResult = downloadClient.MakeRequest(requestUrl, RequestType.Default);
         if ((int)requestResult.statusCode < 200 || (int)requestResult.statusCode >= 300)
             return Array.Empty<Manga>();
 
@@ -101,10 +139,16 @@ public class Manganato : MangaConnector
                 string status = text.Replace("status :", "").Trim().ToLower();
                 if (string.IsNullOrWhiteSpace(status))
                     releaseStatus = Manga.ReleaseStatusByte.Continuing;
-                else if (status == "ongoing")
+                else if (status == "ongoing" || status == "releasing")
                     releaseStatus = Manga.ReleaseStatusByte.Continuing;
+                else if (status == "completed")
+                    releaseStatus = Manga.ReleaseStatusByte.Completed;
+                else if (status == "hiatus")
+                    releaseStatus = Manga.ReleaseStatusByte.OnHiatus;
+                else if (status == "cancelled")
+                    releaseStatus = Manga.ReleaseStatusByte.Cancelled;
                 else
-                    releaseStatus = Enum.Parse<Manga.ReleaseStatusByte>(status, true);
+                    releaseStatus = Manga.ReleaseStatusByte.Continuing; // Default to continuing for unknown statuses
             }
             else if (li.HasClass("genres"))
             {
