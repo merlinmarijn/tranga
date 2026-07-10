@@ -23,6 +23,8 @@ Tranga/Properties/launchSettings.json
 *.DotSettings.user
 
 Manga/
+!API/Migrations/Manga/
+!API/Migrations/Manga/20260710193000_AddContentKind.cs
 debug/
 cover.jpg
 cover.png

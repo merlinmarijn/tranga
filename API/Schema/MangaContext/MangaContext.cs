@@ -20,6 +20,9 @@ public class MangaContext(DbContextOptions<MangaContext> options) : TrangaBaseCo
     {
         //MangaConnector Types
         modelBuilder.Entity<MangaConnector>()
+            .Property(c => c.ContentKind)
+            .HasDefaultValue(ContentKind.Manga);
+        modelBuilder.Entity<MangaConnector>()
             .HasDiscriminator(c => c.Name)
             .HasValue<Global>("Global")
             .HasValue<AsuraComic>("AsuraComic")
@@ -28,6 +31,9 @@ public class MangaContext(DbContextOptions<MangaContext> options) : TrangaBaseCo
             .HasValue<WeebCentral>("WeebCentral");
 
         //Manga has many Chapters
+        modelBuilder.Entity<Manga>()
+            .Property(m => m.ContentKind)
+            .HasDefaultValue(ContentKind.Manga);
         modelBuilder.Entity<Manga>()
             .HasMany<Chapter>(m => m.Chapters)
             .WithOne(c => c.ParentManga)

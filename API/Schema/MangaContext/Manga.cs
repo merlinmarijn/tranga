@@ -16,6 +16,7 @@ public class Manga : Identifiable
     [Required] public string Description { get; internal set; }
     [Url] [StringLength(512)] public string CoverUrl { get; internal set; }
     public MangaReleaseStatus ReleaseStatus { get; internal set; }
+    public ContentKind ContentKind { get; private set; } = ContentKind.Manga;
     [StringLength(64)] public string? LibraryId { get; private set; }
     public FileLibrary? Library = null!;
     public ICollection<Author> Authors { get; internal set; } = null!;
@@ -48,7 +49,8 @@ public class Manga : Identifiable
 
     public Manga(string name, string description, string coverUrl, MangaReleaseStatus releaseStatus,
         ICollection<Author> authors, ICollection<MangaTag> mangaTags, ICollection<Link> links, ICollection<AltTitle> altTitles,
-        FileLibrary? library = null, float ignoreChaptersBefore = 0f, uint? year = null, string? originalLanguage = null)
+        FileLibrary? library = null, float ignoreChaptersBefore = 0f, uint? year = null, string? originalLanguage = null,
+        ContentKind contentKind = ContentKind.Manga)
     :base(TokenGen.CreateToken(typeof(Manga), name))
     {
         this.Name = name;
@@ -64,6 +66,7 @@ public class Manga : Identifiable
         this.DirectoryName = name.CleanNameForWindows();
         this.Year = year;
         this.OriginalLanguage = originalLanguage;
+        this.ContentKind = contentKind;
         this.Chapters = [];
         this.MangaConnectorIds = [];
     }
@@ -73,7 +76,8 @@ public class Manga : Identifiable
     /// </summary>
     public Manga(string key, string name, string description, string coverUrl,
         MangaReleaseStatus releaseStatus,
-        string directoryName, float ignoreChaptersBefore, string? libraryId, uint? year, string? originalLanguage)
+        string directoryName, float ignoreChaptersBefore, string? libraryId, uint? year, string? originalLanguage,
+        ContentKind contentKind)
         : base(key)
     {
         this.Name = name;
@@ -85,6 +89,7 @@ public class Manga : Identifiable
         this.IgnoreChaptersBefore = ignoreChaptersBefore;
         this.Year = year;
         this.OriginalLanguage = originalLanguage;
+        this.ContentKind = contentKind;
     }
     
     /// <exception cref="DirectoryNotFoundException">Library not loaded</exception>

@@ -1,7 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.IO.Compression;
-using System.Runtime.InteropServices;
-using System.Text;
 using API.MangaConnectors;
 using API.Schema.ActionsContext;
 using API.Schema.ActionsContext.Actions;
@@ -10,11 +7,6 @@ using API.Schema.NotificationsContext;
 using API.Workers.PeriodicWorkers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Processing.Processors.Binarization;
-using static System.IO.UnixFileMode;
 
 namespace API.Workers.MangaDownloadWorkers;
 
@@ -78,13 +70,8 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
             return [];
         }
         
-        Log.Info($"Getting imageUrls for chapter {chapter}");
-        string[] imageUrls = mangaConnector.GetChapterImageUrls(mangaConnectorId);
-        if (imageUrls.Length < 1)
-        {
-            Log.Info($"No imageUrls for chapter {chapter}");
-            return [];
-        }
+        Log.Info($"Getting chapter payload for {chapter}");
+        ChapterDownloadPayload payload = mangaConnector.GetChapterPayload(mangaConnectorId);
 
         if (chapter.FullArchiveFilePath is not { } saveArchiveFilePath)
         {
@@ -107,77 +94,16 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
             Directory.CreateDirectory(directoryPath);
         }
 
-        Log.Info($"Downloading images: {chapter}");
-        List<Stream> images = [];
-        //Download all Images to temporary Folder
-        foreach (string imageUrl in imageUrls)
-        {
-            try
+        bool exported = await ChapterExporter.Export(payload, mangaConnector, chapter, saveArchiveFilePath,
+            mangaConnectorId.WebsiteUrl, async () =>
             {
-                if (await mangaConnector.DownloadImage(imageUrl, CancellationToken, mangaConnectorId.WebsiteUrl) is not { } stream)
-                {
-                    Log.Error($"Failed to download image: {imageUrl}");
-                    return [];
-                }
-                else
-                    images.Add(await ProcessImage(stream, CancellationToken));
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex);
-                images.ForEach(i => i.Dispose());
-                return [];
-            }
-        }
-        
-        await CopyCoverFromCacheToDownloadLocation(chapter.ParentManga);
-        
-        Log.Debug($"Loading collections {chapter}");
-        foreach (CollectionEntry collectionEntry in MangaContext.Entry(chapter.ParentManga).Collections)
-            await collectionEntry.LoadAsync(CancellationToken);
-
-        if (File.Exists(saveArchiveFilePath))
-        {
-            Log.Info($"Archive {saveArchiveFilePath} already existed, overwriting.");
-            File.Delete(saveArchiveFilePath);
-        }
-
-        //Create cbz archive
-        try
-        {
-            Log.Debug($"Creating archive: {saveArchiveFilePath}");
-            //ZIP-it and ship-it
-            using ZipArchive archive = ZipFile.Open(saveArchiveFilePath, ZipArchiveMode.Create);
-
-            if (Constants.CreateComicInfoXml)
-            {
-                Log.Debug("Writing ComicInfo.xml");
-                Stream comicStream = archive.CreateEntry("ComicInfo.xml").Open();
-                string comicInfo = chapter.GetComicInfoXmlString();
-                await comicStream.WriteAsync(Encoding.UTF8.GetBytes(comicInfo), CancellationToken);
-                await comicStream.DisposeAsync();
-            }
-            else
-                Log.Debug("Skipping ComicInfo.xml. CREATE_COMICINFO_XML is set to false");
-            
-            for (int i = 0; i < images.Count; i++)
-            {
-                Log.Debug($"Packaging images to archive {chapter} , image {i}");
-                Stream zipStream = archive.CreateEntry($"{i}.jpg").Open();
-                Stream imageStream = images[i];
-                imageStream.Position = 0;
-                await imageStream.CopyToAsync(zipStream, CancellationToken);
-                await zipStream.DisposeAsync();
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex);
-        }
-        finally
-        {
-            images.ForEach(i => i.Dispose());
-        }
+                await CopyCoverFromCacheToDownloadLocation(chapter.ParentManga);
+                Log.Debug($"Loading collections {chapter}");
+                foreach (CollectionEntry collectionEntry in MangaContext.Entry(chapter.ParentManga).Collections)
+                    await collectionEntry.LoadAsync(CancellationToken);
+            }, CancellationToken);
+        if (!exported)
+            return [];
 
         chapter.Downloaded = true;
         chapter.FileName = new FileInfo(saveArchiveFilePath).Name;
@@ -213,52 +139,6 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
         _ => true
     };
     private async Task<bool> AllDownloadsFinished() => (await StartNewChapterDownloadsWorker.GetMissingChapters(MangaContext, CancellationToken)).Count == 0;
-    
-    private async Task<Stream> ProcessImage(Stream imageStream, CancellationToken? cancellationToken = null)
-    {
-        Log.Debug("Processing image");
-        imageStream.Position = 0;
-        int imageCompression = Math.Clamp(Tranga.Settings.ImageCompression, 1, 100);
-        if (!Tranga.Settings.BlackWhiteImages && imageCompression == 100)
-        {
-            Log.Debug("No processing requested for image");
-            return imageStream;
-        }
-
-        MemoryStream processedImage = new ();
-        try
-        {
-            using Image image = await Image.LoadAsync(imageStream, cancellationToken ?? CancellationToken.None);
-            Log.Debug("Image loaded");
-            if (Tranga.Settings.BlackWhiteImages)
-                image.Mutate(i => i.ApplyProcessor(new AdaptiveThresholdProcessor()));
-            await image.SaveAsJpegAsync(processedImage, new JpegEncoder()
-            {
-                Quality = imageCompression
-            });
-            Log.Debug("Image processed");
-            processedImage.Position = 0;
-            return processedImage;
-        }
-        catch (Exception e)
-        {
-            if (e is UnknownImageFormatException or NotSupportedException)
-            {
-                //If the Image-Format is not processable by ImageSharp, we can't modify it.
-                Log.Debug("Unable to process image: Not supported image format");
-            }else if (e is InvalidImageContentException)
-            {
-                Log.Debug("Unable to process image: Invalid Content");
-            }
-            else
-            {
-                Log.Error(e);
-            }
-            await imageStream.CopyToAsync(processedImage);
-            processedImage.Position = 0;
-            return processedImage;
-        }
-    }
     
     private async Task CopyCoverFromCacheToDownloadLocation(Manga manga)
     {

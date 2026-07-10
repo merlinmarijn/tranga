@@ -59,4 +59,11 @@ public class Global : MangaConnector
             return [];
         return mangaConnector.GetChapterImageUrls(chapterId);
     }
+
+    internal override ChapterDownloadPayload GetChapterPayload(MangaConnectorId<Chapter> chapterId)
+    {
+        if (!Tranga.TryGetMangaConnector(chapterId.MangaConnectorName, out MangaConnector? mangaConnector))
+            return new ImagePagesPayload([]);
+        return mangaConnector.GetChapterPayload(chapterId);
+    }
 }

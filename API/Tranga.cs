@@ -21,7 +21,7 @@ public static class Tranga
     private static readonly ILog Log = LogManager.GetLogger(typeof(Tranga));
     internal static readonly MetadataFetcher[] MetadataFetchers = [new MyAnimeList()];
     internal static readonly MangaConnector[] MangaConnectors = [
-        new Global(), new AsuraComic(), new MangaDex(), new Mangaworld(), new WeebCentral(),
+        new Global(), new AsuraComic(), new MangaDex(), new Mangaworld(), new WeebCentral(), new LightNovelWorld(),
         .. MangaConnectorCatalog.LoadConfigured()
     ];
     internal static readonly TrangaSettings Settings = TrangaSettings.Load();

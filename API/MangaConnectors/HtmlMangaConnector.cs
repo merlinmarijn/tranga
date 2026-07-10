@@ -19,7 +19,8 @@ public abstract class HtmlMangaConnector : MangaConnector
         definition.Name,
         definition.SupportedLanguages,
         definition.BaseUris,
-        definition.IconUrl)
+        definition.IconUrl,
+        definition.ContentKind)
     {
         Definition = definition.Validate();
         downloadClient = client;
@@ -130,7 +131,8 @@ public abstract class HtmlMangaConnector : MangaConnector
             Texts(document.DocumentNode, Definition.Tags).Select(tag => new MangaTag(tag)).ToList(),
             [],
             [],
-            originalLanguage: Definition.OriginalLanguage);
+            originalLanguage: Definition.OriginalLanguage,
+            contentKind: ContentKind);
         MangaConnectorId<Manga> connectorId = new(manga, this, id, url);
         manga.MangaConnectorIds.Add(connectorId);
         return (manga, connectorId);
@@ -152,7 +154,8 @@ public abstract class HtmlMangaConnector : MangaConnector
             tagsToken.Children().Select(tag => new MangaTag(tag.Value<string>("name") ?? tag.Value<string>() ?? string.Empty)).Where(tag => tag.Tag.Length > 0).ToList(),
             [],
             [],
-            originalLanguage: Definition.OriginalLanguage);
+            originalLanguage: Definition.OriginalLanguage,
+            contentKind: ContentKind);
         MangaConnectorId<Manga> connectorId = new(manga, this, id, url);
         manga.MangaConnectorIds.Add(connectorId);
         return (manga, connectorId);
@@ -253,6 +256,7 @@ public sealed record HtmlConnectorDefinition(
     public string? Tags { get; init; }
     public string? OriginalLanguage { get; init; }
     public string? SearchQuerySpaceReplacement { get; init; }
+    public ContentKind ContentKind { get; init; } = ContentKind.Manga;
 
     public HtmlConnectorDefinition Validate()
     {

@@ -200,7 +200,7 @@ public class Chapter : Identifiable, IComparable<Chapter>
             stringBuilder.Append(value);
         }
 
-        stringBuilder.Append(".cbz");
+        stringBuilder.Append(ParentManga.ContentKind == ContentKind.Novel ? ".epub" : ".cbz");
 
         return stringBuilder.ToString().CleanNameForWindows();
     }

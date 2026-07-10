@@ -11,7 +11,8 @@ using SixLabors.ImageSharp.Processing;
 namespace API.MangaConnectors;
 
 [PrimaryKey("Name")]
-public abstract class MangaConnector(string name, string[] supportedLanguages, string[] baseUris, string iconUrl)
+public abstract class MangaConnector(string name, string[] supportedLanguages, string[] baseUris, string iconUrl,
+    ContentKind contentKind = ContentKind.Manga)
 {
     [NotMapped] internal IDownloadClient downloadClient { get; init; } = null!;
     [NotMapped] protected ILog Log { get; init; } = LogManager.GetLogger(name);
@@ -19,6 +20,7 @@ public abstract class MangaConnector(string name, string[] supportedLanguages, s
     [StringLength(8)] public string[] SupportedLanguages { get; init; } = supportedLanguages;
     [StringLength(2048)] public string IconUrl { get; init; } = iconUrl;
     [StringLength(256)] public string[] BaseUris { get; init; } = baseUris;
+    public ContentKind ContentKind { get; init; } = contentKind;
     public bool Enabled { get; internal set; } = true;
     
     public abstract (Manga, MangaConnectorId<Manga>)[] SearchManga(string mangaSearchName);
@@ -30,7 +32,10 @@ public abstract class MangaConnector(string name, string[] supportedLanguages, s
     public abstract (Chapter, MangaConnectorId<Chapter>)[] GetChapters(MangaConnectorId<Manga> mangaId,
         string? language = null);
 
-    internal abstract string[] GetChapterImageUrls(MangaConnectorId<Chapter> chapterId);
+    internal virtual ChapterDownloadPayload GetChapterPayload(MangaConnectorId<Chapter> chapterId) =>
+        new ImagePagesPayload(GetChapterImageUrls(chapterId));
+
+    internal virtual string[] GetChapterImageUrls(MangaConnectorId<Chapter> chapterId) => [];
 
     public bool UrlMatchesConnector(string url) => BaseUris.Any(baseUri => Regex.IsMatch(url, "https?://" + baseUri + "/.*"));
     

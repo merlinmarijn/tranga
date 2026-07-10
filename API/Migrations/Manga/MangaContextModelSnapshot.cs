@@ -32,6 +32,11 @@ namespace API.Migrations.Manga
                         .HasMaxLength(256)
                         .HasColumnType("text[]");
 
+                    b.Property<int>("ContentKind")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
@@ -142,6 +147,11 @@ namespace API.Migrations.Manga
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<int>("ContentKind")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<string>("Description")
                         .IsRequired()
