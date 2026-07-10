@@ -28,6 +28,7 @@ public class HtmlConnectorDefinitionTest
         HtmlConnectorDefinition definition = LoadMangaKakalotDefinition();
 
         Assert.Same(definition, definition.Validate());
+        Assert.Equal("_", definition.SearchQuerySpaceReplacement);
     }
 
     [Fact]

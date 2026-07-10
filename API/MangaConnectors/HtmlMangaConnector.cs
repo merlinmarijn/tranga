@@ -31,7 +31,8 @@ public abstract class HtmlMangaConnector : MangaConnector
 
     public override (Manga, MangaConnectorId<Manga>)[] SearchManga(string mangaSearchName)
     {
-        HtmlDocument? document = GetDocument(BuildUrl(Definition.SearchUrl, HttpUtility.UrlEncode(mangaSearchName)), RequestType.Default);
+        string query = HttpUtility.UrlEncode(mangaSearchName).Replace("+", Definition.SearchQuerySpaceReplacement ?? "+");
+        HtmlDocument? document = GetDocument(BuildUrl(Definition.SearchUrl, query), RequestType.Default);
         if (Definition.NextData && document is not null)
             return NextData(document, "ssrItems") is not JArray items
                 ? []
@@ -251,6 +252,7 @@ public sealed record HtmlConnectorDefinition(
     public string? Authors { get; init; }
     public string? Tags { get; init; }
     public string? OriginalLanguage { get; init; }
+    public string? SearchQuerySpaceReplacement { get; init; }
 
     public HtmlConnectorDefinition Validate()
     {
