@@ -1,4 +1,5 @@
 using API.MangaConnectors;
+using System.Text.Json;
 
 namespace Tests;
 
@@ -18,6 +19,16 @@ public class HtmlConnectorDefinitionTest
         HtmlConnectorDefinition definition = Definition() with { ChapterRegex = @"chapter/\d+" };
 
         Assert.Throws<ArgumentException>(definition.Validate);
+    }
+
+    [Fact]
+    public void Validate_AcceptsBundledMangaKakalotDefinition()
+    {
+        string json = File.ReadAllText(Path.Join(AppContext.BaseDirectory, "Connectors", "MangaKakalot.json"));
+        HtmlConnectorDefinition? definition = JsonSerializer.Deserialize<HtmlConnectorDefinition>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(definition);
+        Assert.Same(definition, definition!.Validate());
     }
 
     private static HtmlConnectorDefinition Definition() => new(
