@@ -12,7 +12,7 @@ services:
       tranga-pg:
         condition: service_healthy
     environment:
-      - POSTGRES_HOST=tranga-pg
+      - POSTGRES_HOST=tranga-pg-2ooxyw
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       #- FLARESOLVERR_URL=
