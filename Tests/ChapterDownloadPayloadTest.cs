@@ -71,6 +71,11 @@ public class ChapterDownloadPayloadTest
             string package = await reader.ReadToEndAsync();
             Assert.Contains("Author", package);
             Assert.Contains("Description", package);
+            Assert.Contains("calibre:series", package);
+            Assert.Contains(">Novel</", package);
+            Assert.Contains("calibre:series_index", package);
+            Assert.Contains(">2</", package);
+            Assert.Contains("belongs-to-collection", package);
             string chapterHtml = await new StreamReader(archive.GetEntry("OEBPS/chapter.xhtml")!.Open()).ReadToEndAsync();
             Assert.Contains("Chapter title", chapterHtml);
             Assert.Contains("First paragraph.", chapterHtml);
