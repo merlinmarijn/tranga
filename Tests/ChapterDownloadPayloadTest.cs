@@ -58,7 +58,7 @@ public class ChapterDownloadPayloadTest
                 originalLanguage: "en", contentKind: ContentKind.Novel);
             Chapter chapter = new(manga, "2", null, "Chapter title");
 
-            Assert.True(await ChapterExporter.Export(new ChapterHtmlPayload("<p>First paragraph.</p><p><strong>Formatted</strong> second paragraph.</p>"), new ImageConnector(), chapter,
+            Assert.True(await ChapterExporter.Export(new ChapterHtmlPayload("<script>advertisement()</script><p>First paragraph.</p><p><strong>Formatted</strong> second paragraph.</p>"), new ImageConnector(), chapter,
                 path, null, () => Task.CompletedTask, CancellationToken.None));
 
             using ZipArchive archive = ZipFile.OpenRead(path);
@@ -75,6 +75,7 @@ public class ChapterDownloadPayloadTest
             Assert.Contains("Chapter title", chapterHtml);
             Assert.Contains("First paragraph.", chapterHtml);
             Assert.Contains("Formatted", chapterHtml);
+            Assert.DoesNotContain("advertisement", chapterHtml);
             Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(chapterHtml, "<p").Count);
         }
         finally

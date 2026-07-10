@@ -146,6 +146,8 @@ internal static class ChapterExporter
 
     private static IEnumerable<XNode> ToXhtml(HtmlNode node, XNamespace xhtml)
     {
+        if (node.Name is "script" or "style" or "noscript" or "iframe" or "object" or "embed")
+            return [];
         if (node.NodeType == HtmlNodeType.Text)
             return string.IsNullOrWhiteSpace(node.InnerText) ? [] : [new XText(HtmlEntity.DeEntitize(node.InnerText))];
         if (node.NodeType != HtmlNodeType.Element)
