@@ -57,9 +57,10 @@ public sealed class LightNovelWorld : MangaConnector
     public override (Chapter, MangaConnectorId<Chapter>)[] GetChapters(MangaConnectorId<Manga> mangaId, string? language = null)
     {
         List<(Chapter, MangaConnectorId<Chapter>)> chapters = [];
-        for (int page = 1; ; page++)
+        HtmlDocument? firstPage = GetDocument($"https://lightnovelworld.org/novel/{mangaId.IdOnConnectorSite}/chapters/?page=1");
+        for (int page = 1; page <= GetChapterPageCount(firstPage); page++)
         {
-            HtmlDocument? document = GetDocument($"https://lightnovelworld.org/novel/{mangaId.IdOnConnectorSite}/chapters/?page={page}");
+            HtmlDocument? document = page == 1 ? firstPage : GetDocument($"https://lightnovelworld.org/novel/{mangaId.IdOnConnectorSite}/chapters/?page={page}");
             HtmlNodeCollection? cards = document?.DocumentNode.SelectNodes("//main//div[contains(@class, 'chapter-card')]");
             if (cards is null || cards.Count == 0)
                 break;
@@ -78,6 +79,10 @@ public sealed class LightNovelWorld : MangaConnector
         }
         return chapters.OrderBy(item => item.Item1, new Chapter.ChapterComparer()).ToArray();
     }
+
+    internal static int GetChapterPageCount(HtmlDocument? document) => (document?.DocumentNode.SelectNodes("//main//select//option") ?? Enumerable.Empty<HtmlNode>())
+        .Select(option => int.TryParse(option.GetAttributeValue("value", option.InnerText), out int page) ? page : 0)
+        .DefaultIfEmpty(1).Max();
 
     internal override ChapterDownloadPayload GetChapterPayload(MangaConnectorId<Chapter> chapterId) =>
         GetDocument(chapterId.WebsiteUrl ?? string.Empty)?.DocumentNode.SelectSingleNode("//main//div[contains(@class, 'chapter-text')]") is { } content
