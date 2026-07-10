@@ -20,7 +20,10 @@ public static class Tranga
     
     private static readonly ILog Log = LogManager.GetLogger(typeof(Tranga));
     internal static readonly MetadataFetcher[] MetadataFetchers = [new MyAnimeList()];
-    internal static readonly MangaConnector[] MangaConnectors = [new Global(), new AsuraComic(), new MangaDex(), new Mangaworld(), new WeebCentral()];
+    internal static readonly MangaConnector[] MangaConnectors = [
+        new Global(), new AsuraComic(), new MangaDex(), new Mangaworld(), new WeebCentral(),
+        .. MangaConnectorCatalog.LoadConfigured()
+    ];
     internal static readonly TrangaSettings Settings = TrangaSettings.Load();
     
     // ReSharper disable MemberCanBePrivate.Global
@@ -128,6 +131,8 @@ public static class Tranga
     private static readonly HashSet<BaseWorker> KnownWorkers = new();
     public static BaseWorker[] GetKnownWorkers() =>  KnownWorkers.ToArray();
     private static readonly ConcurrentDictionary<BaseWorker, Task<BaseWorker[]>> RunningWorkers = new();
+    private static readonly Queue<(BaseWorker Worker, Action? FinishedCallback)> QueuedWorkers = new();
+    private static readonly object WorkerQueueLock = new();
     public static BaseWorker[] GetRunningWorkers() => RunningWorkers.Keys.ToArray();
     
     internal static void StartWorker(BaseWorker worker, Action? finishedCallback = null)
@@ -138,14 +143,22 @@ public static class Tranga
             Log.Fatal("ServiceProvider is null");
             return;
         }
-        Action afterWorkCallback = DefaultAfterWork(worker, finishedCallback);
-
-        while (RunningWorkers.Count > Settings.MaxConcurrentWorkers)
+        lock (WorkerQueueLock)
         {
-            Log.WarnFormat("{0}: Max worker concurrency reached ({1})! Waiting {2}ms...", worker, Settings.MaxConcurrentWorkers, Settings.WorkCycleTimeoutMs);
-            Thread.Sleep(Settings.WorkCycleTimeoutMs);
-        }
+            if (QueuedWorkers.Count > 0 || RunningWorkers.Count >= Math.Max(1, Settings.MaxConcurrentWorkers))
+            {
+                QueuedWorkers.Enqueue((worker, finishedCallback));
+                Log.DebugFormat("Queued {0}: max worker concurrency reached ({1}).", worker, Settings.MaxConcurrentWorkers);
+                return;
+            }
 
+            StartWorkerImmediately(worker, finishedCallback);
+        }
+    }
+
+    private static void StartWorkerImmediately(BaseWorker worker, Action? finishedCallback)
+    {
+        Action afterWorkCallback = DefaultAfterWork(worker, finishedCallback);
         if (worker is BaseWorkerWithContexts withContexts)
         {
             RunningWorkers.TryAdd(withContexts, withContexts.DoWork(ServiceProvider.CreateScope(), afterWorkCallback));
@@ -153,6 +166,16 @@ public static class Tranga
         else
         {
             RunningWorkers.TryAdd(worker, worker.DoWork(afterWorkCallback));
+        }
+    }
+
+    private static void StartQueuedWorkers()
+    {
+        lock (WorkerQueueLock)
+        {
+            while (RunningWorkers.Count < Math.Max(1, Settings.MaxConcurrentWorkers)
+                   && QueuedWorkers.TryDequeue(out (BaseWorker Worker, Action? FinishedCallback) queuedWorker))
+                StartWorkerImmediately(queuedWorker.Worker, queuedWorker.FinishedCallback);
         }
     }
 
@@ -177,11 +200,15 @@ public static class Tranga
                 }else
                     Log.WarnFormat("Children failed: {0}", worker);
             }
-            RunningWorkers.Remove(worker, out _);
         }
         catch (Exception e)
         {
             Log.Error(e);
+        }
+        finally
+        {
+            RunningWorkers.Remove(worker, out _);
+            StartQueuedWorkers();
         }
         callback?.Invoke();
     };

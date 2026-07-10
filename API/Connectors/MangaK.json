@@ -1,0 +1,22 @@
+{
+  "name": "MangaK",
+  "baseUrl": "https://mangak.io/",
+  "supportedLanguages": ["en"],
+  "baseUris": ["mangak.io", "www.mangak.io"],
+  "iconUrl": "https://mangak.io/static/sites/mangak/icons/favicon.ico",
+  "searchUrl": "https://mangak.io/search?q={query}&exclude=yaoi&sort=latest",
+  "searchResultXPath": "//main//article/a[.//img]",
+  "mangaUrl": "https://mangak.io/{id}",
+  "mangaIdRegex": "^https?://(?:www\\.)?mangak\\.io/(?<id>[^/?#]+)/?$",
+  "title": { "xPath": "//main//h1" },
+  "description": { "xPath": "//meta[@name='description']", "attribute": "content" },
+  "cover": { "xPath": "//meta[@property='og:image']", "attribute": "content" },
+  "status": { "xPath": "//main//h1/preceding-sibling::*[1]" },
+  "tags": "//a[starts-with(@href, '/tags/')]",
+  "originalLanguage": "en",
+  "chapterLinkXPath": "//a[contains(@href, '/chapter-')]",
+  "chapterRegex": "/(?<id>chapter-(?<urlNumber>\\d+(?:-\\d+)?)).*?Chapter\\s+(?<number>\\d+(?:\\.\\d+)?)",
+  "pageImageXPath": "//main//img",
+  "pageImageRegex": "\"images\":\\[(?:\"(?<url>https://[^\"]+)\"(?:,)?)+\\]",
+  "nextData": true
+}

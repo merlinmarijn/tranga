@@ -50,6 +50,7 @@ bool retVal = xyz?
 1. Copy one of the existing connectors, or start from scratch and inherit from `API.Schema.MangaConnectors.MangaConnector`.
 2. Add the new Connector as Object-Instance in `Tranga.cs` to the MangaConnector-Array `connectors`.
 3. Add the discriminator to the `MangaContext.cs` `MangaConnector`-Entity
+4. For a regular HTML site, you can instead follow [the JSON connector recipe](API/MangaConnectors/README.md). These definitions load alongside the handwritten connectors, so they do not need a central-list, discriminator, or migration edit.
 
 ### Database and EF Core
 

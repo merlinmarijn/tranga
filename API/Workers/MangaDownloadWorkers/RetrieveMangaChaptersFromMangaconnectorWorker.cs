@@ -69,7 +69,7 @@ public class RetrieveMangaChaptersFromMangaconnectorWorker(MangaConnectorId<Mang
         List<MangaConnectorId<Chapter>> newIds = allChapters.Select(ch => ch.chapterId)
             .Where(newCh => !existingChapterIds.Any(existing =>
                 existing.MangaConnectorName == newCh.MangaConnectorName &&
-                existing.IdOnConnectorSite == newCh.IdOnConnectorSite))
+                (existing.IdOnConnectorSite == newCh.IdOnConnectorSite || existing.WebsiteUrl == newCh.WebsiteUrl)))
             .ToList();
         // Match tracked entities of Chapters
         foreach (MangaConnectorId<Chapter> newId in newIds)

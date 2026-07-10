@@ -114,7 +114,7 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
         {
             try
             {
-                if (await mangaConnector.DownloadImage(imageUrl, CancellationToken) is not { } stream)
+                if (await mangaConnector.DownloadImage(imageUrl, CancellationToken, mangaConnectorId.WebsiteUrl) is not { } stream)
                 {
                     Log.Error($"Failed to download image: {imageUrl}");
                     return [];
@@ -218,7 +218,8 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
     {
         Log.Debug("Processing image");
         imageStream.Position = 0;
-        if (!Tranga.Settings.BlackWhiteImages && Tranga.Settings.ImageCompression == 100)
+        int imageCompression = Math.Clamp(Tranga.Settings.ImageCompression, 1, 100);
+        if (!Tranga.Settings.BlackWhiteImages && imageCompression == 100)
         {
             Log.Debug("No processing requested for image");
             return imageStream;
@@ -233,7 +234,7 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
                 image.Mutate(i => i.ApplyProcessor(new AdaptiveThresholdProcessor()));
             await image.SaveAsJpegAsync(processedImage, new JpegEncoder()
             {
-                Quality = Tranga.Settings.ImageCompression
+                Quality = imageCompression
             });
             Log.Debug("Image processed");
             processedImage.Position = 0;

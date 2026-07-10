@@ -33,7 +33,7 @@ internal class HttpDownloadClient : IDownloadClient
                     (s.Product?.Name ?? "").Contains("cloudflare", StringComparison.InvariantCultureIgnoreCase)))
             {
                 Log.Debug("Retrying with FlareSolverr!");
-                return await FlareSolverrDownloadClient.MakeRequest(url, requestType, referrer);
+                return await FlareSolverrDownloadClient.MakeRequest(url, requestType, referrer, cancellationToken);
             }
             
             Log.Debug($"Request returned status code {(int)response.StatusCode} {response.StatusCode}:\n" +
@@ -53,7 +53,8 @@ internal class HttpDownloadClient : IDownloadClient
         catch (HttpRequestException e)
         {
             Log.Error(e);
-            return new(HttpStatusCode.InternalServerError);
+            Log.Debug("Connection failed; retrying with FlareSolverr!");
+            return await FlareSolverrDownloadClient.MakeRequest(url, requestType, referrer, cancellationToken);
         }
     }
 }

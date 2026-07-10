@@ -163,7 +163,7 @@ public class ChaptersController(MangaContext context) : ControllerBase
     [ProducesResponseType<string>(Status404NotFound, "text/plain")]
     public async Task<Results<Ok<Chapter>, NotFound<string>>> GetChapter (string ChapterId)
     {
-        if (await context.Chapters.FirstOrDefaultAsync(c => c.Key == ChapterId, HttpContext.RequestAborted) is not { } chapter)
+        if (await context.Chapters.Include(ch => ch.MangaConnectorIds).FirstOrDefaultAsync(c => c.Key == ChapterId, HttpContext.RequestAborted) is not { } chapter)
             return TypedResults.NotFound(nameof(ChapterId));
         
         IEnumerable<DTOs.MangaConnectorId<Chapter>> ids = chapter.MangaConnectorIds.Select(id =>

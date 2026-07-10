@@ -48,7 +48,10 @@ public abstract class MangaConnector(string name, string[] supportedLanguages, s
         if (File.Exists(saveImagePath))
             return filename;
         
-        HttpResponseMessage coverResult = downloadClient.MakeRequest(mangaId.Obj.CoverUrl, RequestType.MangaCover, $"https://{match.Groups[1].Value}").Result;
+        string referrer = BaseUris.FirstOrDefault() is { } baseUri
+            ? $"https://{baseUri.TrimEnd('/')}/"
+            : $"https://{match.Groups[1].Value}";
+        HttpResponseMessage coverResult = downloadClient.MakeRequest(mangaId.Obj.CoverUrl, RequestType.MangaCover, referrer).Result;
         if ((int)coverResult.StatusCode < 200 || (int)coverResult.StatusCode >= 300)
             return SaveCoverImageToCache(mangaId, retries - 1);
             
@@ -85,9 +88,9 @@ public abstract class MangaConnector(string name, string[] supportedLanguages, s
         return filename.CleanNameForWindows();
     }
     
-    public async Task<Stream?> DownloadImage(string imageUrl, CancellationToken ct)
+    public async Task<Stream?> DownloadImage(string imageUrl, CancellationToken ct, string? referrer = null)
     {
-        HttpResponseMessage requestResult = await downloadClient.MakeRequest(imageUrl, RequestType.MangaImage, cancellationToken: ct);
+        HttpResponseMessage requestResult = await downloadClient.MakeRequest(imageUrl, RequestType.MangaImage, referrer, ct);
         return requestResult.IsSuccessStatusCode ? await requestResult.Content.ReadAsStreamAsync(ct) : null;
     }
 }

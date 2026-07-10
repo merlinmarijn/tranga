@@ -7,6 +7,7 @@ namespace API;
 
 public struct TrangaSettings
 {
+    public const string DefaultChapterNamingScheme = "%M - ?V(Vol.%V )Ch.%C?T( - %T)";
     [JsonIgnore] public static int Port => int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "6531");
     [JsonIgnore] public static bool Debug => bool.Parse(Environment.GetEnvironmentVariable("DEBUG") ?? "false");
     [JsonIgnore] public static string AppData => RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? Debug ? "./debug" :"/usr/share" : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -37,7 +38,7 @@ public struct TrangaSettings
     /// ?_(...) replace _ with a value from above:
     /// Everything inside the braces will only be added if the value of %_ is not null
     /// </summary>
-    public string ChapterNamingScheme { get; set; } = "%M - ?V(Vol.%V )Ch.%C?T( - %T)";
+    public string ChapterNamingScheme { get; set; } = DefaultChapterNamingScheme;
     public int WorkCycleTimeoutMs { get; set; } = 20000;
 
     public string DownloadLanguage { get; set; } = "en";
@@ -59,7 +60,21 @@ public struct TrangaSettings
     {
         if (!File.Exists(SettingsFilePath))
             new TrangaSettings().Save();
-        return JsonConvert.DeserializeObject<TrangaSettings>(File.ReadAllText(SettingsFilePath), new StringEnumConverter());
+        TrangaSettings settings = JsonConvert.DeserializeObject<TrangaSettings>(File.ReadAllText(SettingsFilePath), new StringEnumConverter());
+        bool changed = false;
+        if (string.IsNullOrWhiteSpace(settings.ChapterNamingScheme))
+        {
+            settings.ChapterNamingScheme = DefaultChapterNamingScheme;
+            changed = true;
+        }
+        if (settings.ImageCompression is < 1 or > 100)
+        {
+            settings.ImageCompression = 100;
+            changed = true;
+        }
+        if (changed)
+            settings.Save();
+        return settings;
     }
 
     public void Save()

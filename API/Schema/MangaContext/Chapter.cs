@@ -150,7 +150,7 @@ public class Chapter : Identifiable, IComparable<Chapter>
     /// <returns>A filename</returns>
     private string GetArchiveFileName()
     {
-        string archiveNamingScheme = Tranga.Settings.ChapterNamingScheme;
+        string archiveNamingScheme = Tranga.Settings.ChapterNamingScheme ?? TrangaSettings.DefaultChapterNamingScheme;
         StringBuilder stringBuilder = new();
         foreach (Match nullable in NullableRex.Matches(archiveNamingScheme))
         {

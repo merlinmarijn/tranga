@@ -141,8 +141,6 @@ app.UseSwaggerUI(opts =>
     opts.SwaggerEndpoint("/swagger/v2/swagger.json", "v2");
 });
 
-app.UseHttpsRedirection();
-
 try //Connect to DB and apply migrations
 {
     log.Debug("Applying Migrations...");

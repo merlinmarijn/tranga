@@ -47,6 +47,7 @@
 
     <ItemGroup>
       <None Include="Log4Net.config.xml" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+      <Content Update="Connectors\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
 
     <PropertyGroup>
