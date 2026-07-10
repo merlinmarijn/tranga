@@ -5,7 +5,7 @@
   "baseUris": ["mangakakalot.gg", "www.mangakakalot.gg"],
   "iconUrl": "https://www.mangakakalot.gg/favicon.ico",
   "searchUrl": "https://www.mangakakalot.gg/search/story/{query}",
-  "searchResultXPath": "//a[contains(@href, '/manga/') and not(contains(@href, '/chapter-'))]",
+  "searchResultXPath": "//div[contains(@class, 'daily-update')][h3[contains(normalize-space(.), 'Keyword :')]]//div[contains(@class, 'story_item')]/a[img]",
   "mangaUrl": "https://www.mangakakalot.gg/manga/{id}",
   "mangaIdRegex": "^https?://(?:www\\.)?mangakakalot\\.gg/manga/(?<id>[^/?#]+)/?$",
   "title": { "xPath": "//h1" },
