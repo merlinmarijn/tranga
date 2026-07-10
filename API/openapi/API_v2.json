@@ -3909,6 +3909,13 @@
         },
         "additionalProperties": false
       },
+      "ContentKind": {
+        "enum": [
+          "Manga",
+          "Novel"
+        ],
+        "type": "string"
+      },
       "CoverSize": {
         "enum": [
           "Original",
@@ -4319,6 +4326,7 @@
       },
       "MangaConnector": {
         "required": [
+          "contentKind",
           "enabled",
           "iconUrl",
           "key",
@@ -4345,6 +4353,9 @@
             "minLength": 1,
             "type": "string",
             "description": "Url of the Website Icon"
+          },
+          "contentKind": {
+            "$ref": "#/components/schemas/ContentKind"
           },
           "key": {
             "maxLength": 64,

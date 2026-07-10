@@ -22,7 +22,7 @@ public class MangaConnectorController(MangaContext context) : ControllerBase
     public Ok<List<MangaConnector>> GetConnectors()
     {
         return TypedResults.Ok(Tranga.MangaConnectors
-            .Select(c => new MangaConnector(c.Name, c.Enabled, c.IconUrl, c.SupportedLanguages))
+            .Select(c => new MangaConnector(c.Name, c.Enabled, c.IconUrl, c.SupportedLanguages, c.ContentKind))
             .ToList());
     }
 
@@ -40,7 +40,7 @@ public class MangaConnectorController(MangaContext context) : ControllerBase
         if(!Tranga.TryGetMangaConnector(MangaConnectorName, out MangaConnectors.MangaConnector? connector))
             return TypedResults.NotFound(nameof(MangaConnectorName));
         
-        return TypedResults.Ok(new MangaConnector(connector.Name, connector.Enabled, connector.IconUrl, connector.SupportedLanguages));
+        return TypedResults.Ok(new MangaConnector(connector.Name, connector.Enabled, connector.IconUrl, connector.SupportedLanguages, connector.ContentKind));
     }
     
     /// <summary>
@@ -53,7 +53,7 @@ public class MangaConnectorController(MangaContext context) : ControllerBase
     {
         return TypedResults.Ok(Tranga.MangaConnectors
             .Where(c => c.Enabled == Enabled)
-            .Select(c => new MangaConnector(c.Name, c.Enabled, c.IconUrl, c.SupportedLanguages))
+            .Select(c => new MangaConnector(c.Name, c.Enabled, c.IconUrl, c.SupportedLanguages, c.ContentKind))
             .ToList());
     }
 

@@ -1,9 +1,10 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using API.Schema.MangaContext;
 
 namespace API.Controllers.DTOs;
 
-public sealed record MangaConnector(string Name, bool Enabled, string IconUrl, string[] SupportedLanguages) : Identifiable(Name)
+public sealed record MangaConnector(string Name, bool Enabled, string IconUrl, string[] SupportedLanguages, ContentKind ContentKind) : Identifiable(Name)
 {
     /// <summary>
     /// Whether Connector is used for Searches and Downloads
@@ -25,4 +26,11 @@ public sealed record MangaConnector(string Name, bool Enabled, string IconUrl, s
     [Required]
     [Description("Url of the Website Icon")]
     public string IconUrl { get; init; } = IconUrl;
+
+    /// <summary>
+    /// Type of content provided by the Connector
+    /// </summary>
+    [Required]
+    [Description("Type of content provided by the Connector")]
+    public ContentKind ContentKind { get; init; } = ContentKind;
 }
