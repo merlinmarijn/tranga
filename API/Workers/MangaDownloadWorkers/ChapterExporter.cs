@@ -106,7 +106,6 @@ internal static class ChapterExporter
         string language = chapter.ParentManga.OriginalLanguage ?? "en";
         HtmlDocument document = new();
         document.LoadHtml(payload.Html);
-        string text = HtmlEntity.DeEntitize(document.DocumentNode.InnerText).Trim();
         XNamespace dc = "http://purl.org/dc/elements/1.1/";
         XNamespace opf = "http://www.idpf.org/2007/opf";
         XNamespace epub = "http://www.idpf.org/2007/ops";
@@ -125,8 +124,11 @@ internal static class ChapterExporter
                 new XElement(opf + "item", new XAttribute("id", "nav"), new XAttribute("href", "nav.xhtml"), new XAttribute("media-type", "application/xhtml+xml"), new XAttribute("properties", "nav"))),
             new XElement(opf + "spine", new XElement(opf + "itemref", new XAttribute("idref", "chapter")))));
         XNamespace xhtml = "http://www.w3.org/1999/xhtml";
-        XDocument chapterDocument = new(new XElement(xhtml + "html", new XElement(xhtml + "head", new XElement(xhtml + "title", chapterTitle)),
-            new XElement(xhtml + "body", new XElement(xhtml + "h1", chapterTitle), new XElement(xhtml + "p", text))));
+        XDocument chapterDocument = new(new XElement(xhtml + "html",
+            new XElement(xhtml + "head", new XElement(xhtml + "title", chapterTitle),
+                new XElement(xhtml + "style", "p { margin: 0 0 1em; } blockquote { margin: 1em; }")),
+            new XElement(xhtml + "body", new XElement(xhtml + "h1", chapterTitle),
+                new XElement(xhtml + "div", new XAttribute("class", "chapter-content"), ToXhtml(document.DocumentNode, xhtml)))));
         XDocument navigation = new(new XElement(xhtml + "html", new XElement(xhtml + "head", new XElement(xhtml + "title", chapter.ParentManga.Name)),
             new XElement(xhtml + "body", new XElement(xhtml + "nav", new XAttribute(XNamespace.Xml + "id", "toc"), new XAttribute(epub + "type", "toc"),
                 new XElement(xhtml + "ol", new XElement(xhtml + "li", new XElement(xhtml + "a", new XAttribute("href", "chapter.xhtml"), chapterTitle)))))));
@@ -140,6 +142,26 @@ internal static class ChapterExporter
         await Write(archive, "OEBPS/chapter.xhtml", chapterDocument.ToString(), CompressionLevel.Optimal, cancellationToken);
         await Write(archive, "OEBPS/nav.xhtml", navigation.ToString(), CompressionLevel.Optimal, cancellationToken);
         return true;
+    }
+
+    private static IEnumerable<XNode> ToXhtml(HtmlNode node, XNamespace xhtml)
+    {
+        if (node.NodeType == HtmlNodeType.Text)
+            return string.IsNullOrWhiteSpace(node.InnerText) ? [] : [new XText(HtmlEntity.DeEntitize(node.InnerText))];
+        if (node.NodeType != HtmlNodeType.Element)
+            return node.ChildNodes.SelectMany(child => ToXhtml(child, xhtml));
+
+        string tag = node.Name.ToLowerInvariant() switch
+        {
+            "b" => "strong",
+            "i" => "em",
+            "p" or "br" or "strong" or "em" or "a" or "blockquote" or "ul" or "ol" or "li" or "h2" or "h3" or "h4" => node.Name.ToLowerInvariant(),
+            _ => "span"
+        };
+        XElement element = new(xhtml + tag, node.ChildNodes.SelectMany(child => ToXhtml(child, xhtml)));
+        if (tag == "a" && node.GetAttributeValue("href", "") is { Length: > 0 } href)
+            element.SetAttributeValue("href", href);
+        return [element];
     }
 
     private static async Task Write(ZipArchive archive, string name, string contents, CompressionLevel compression,
