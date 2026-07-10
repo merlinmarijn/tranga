@@ -15,10 +15,18 @@ public sealed class LightNovelWorld : MangaConnector
 
     public override (Manga, MangaConnectorId<Manga>)[] SearchManga(string mangaSearchName)
     {
-        HtmlDocument? document = GetDocument($"https://lightnovelworld.org/search/?q={HttpUtility.UrlEncode(mangaSearchName)}");
-        return (document?.DocumentNode.SelectNodes("//main//a[contains(@href, '/novel/')][.//h3]") ?? Enumerable.Empty<HtmlNode>())
-            .Select(link => GetMangaFromUrl(ToUrl(link.GetAttributeValue("href", ""))))
-            .Where(result => result.HasValue).Select(result => result!.Value).DistinctBy(result => result.Item2.IdOnConnectorSite).ToArray();
+        ChromiumDownloadClient chromium = new();
+        try
+        {
+            HtmlDocument? document = GetDocument($"https://lightnovelworld.org/search/?q={HttpUtility.UrlEncode(mangaSearchName)}", chromium);
+            return (document?.DocumentNode.SelectNodes("//main//a[contains(@href, '/novel/')][.//h3]") ?? Enumerable.Empty<HtmlNode>())
+                .Select(link => GetMangaFromUrl(ToUrl(link.GetAttributeValue("href", ""))))
+                .Where(result => result.HasValue).Select(result => result!.Value).DistinctBy(result => result.Item2.IdOnConnectorSite).ToArray();
+        }
+        finally
+        {
+            chromium.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 
     public override (Manga, MangaConnectorId<Manga>)? GetMangaFromUrl(string url)
@@ -76,9 +84,9 @@ public sealed class LightNovelWorld : MangaConnector
             ? new ChapterHtmlPayload(content.InnerHtml)
             : new ChapterHtmlPayload(string.Empty);
 
-    private HtmlDocument? GetDocument(string url)
+    private HtmlDocument? GetDocument(string url, IDownloadClient? client = null)
     {
-        using HttpResponseMessage response = downloadClient.MakeRequest(url, RequestType.Default).GetAwaiter().GetResult();
+        using HttpResponseMessage response = (client ?? downloadClient).MakeRequest(url, RequestType.Default).GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
             return null;
         HtmlDocument document = new();
