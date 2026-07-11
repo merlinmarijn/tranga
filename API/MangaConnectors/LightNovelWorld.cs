@@ -67,7 +67,7 @@ public sealed class LightNovelWorld : MangaConnector
             foreach (HtmlNode card in cards)
             {
                 Match match = Regex.Match(card.GetAttributeValue("onclick", ""), @"chapter/(?<id>\d+)/");
-                Match title = Regex.Match(Text(card, ".//h3") ?? "", @"Chapter\s+(?<number>[\d.]+)\s*-\s*(?<title>.*)");
+                Match title = Regex.Match(Text(card, ".//h3") ?? "", @"Chapter\s+(?<number>[\d.]+)(?:\s*[-:]\s*|\s+)(?<title>.*)");
                 if (!match.Success || !title.Success)
                     continue;
                 Chapter chapter = new(mangaId.Obj, title.Groups["number"].Value, null, title.Groups["title"].Value.Trim());
