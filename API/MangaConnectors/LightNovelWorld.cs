@@ -67,10 +67,9 @@ public sealed class LightNovelWorld : MangaConnector
             foreach (HtmlNode card in cards)
             {
                 Match match = Regex.Match(card.GetAttributeValue("onclick", ""), @"chapter/(?<id>\d+)/");
-                Match title = Regex.Match(Text(card, ".//h3") ?? "", @"Chapter\s+(?<number>[\d.]+)(?:\s*[-:]\s*|\s+)(?<title>.*)");
-                if (!match.Success || !title.Success)
+                if (!match.Success || ParseChapter(card) is not { } chapterInfo)
                     continue;
-                Chapter chapter = new(mangaId.Obj, title.Groups["number"].Value, null, title.Groups["title"].Value.Trim());
+                Chapter chapter = new(mangaId.Obj, chapterInfo.Number, null, chapterInfo.Title);
                 string chapterId = match.Groups["id"].Value;
                 MangaConnectorId<Chapter> id = new(chapter, this, CreateChapterId(mangaId.IdOnConnectorSite, chapterId),
                     $"https://lightnovelworld.org/novel/{mangaId.IdOnConnectorSite}/chapter/{chapterId}/");
@@ -87,6 +86,15 @@ public sealed class LightNovelWorld : MangaConnector
 
     internal static string CreateChapterId(string mangaId, string chapterId) => $"{mangaId}-{chapterId}";
 
+    internal static (string Number, string Title)? ParseChapter(HtmlNode card)
+    {
+        string number = Text(card, ".//div[contains(@class, 'chapter-number')]") ?? string.Empty;
+        if (!Regex.IsMatch(number, @"^\d+(?:\.\d+)*$"))
+            return null;
+        string title = Regex.Replace(Text(card, ".//h3") ?? string.Empty, @"^Chapter\s+[\d.]+(?:\s*[-:]\s*|\s+)?", string.Empty).Trim();
+        return (number, title);
+    }
+
     internal override ChapterDownloadPayload GetChapterPayload(MangaConnectorId<Chapter> chapterId) =>
         GetDocument(chapterId.WebsiteUrl ?? string.Empty)?.DocumentNode.SelectSingleNode("//main//div[contains(@class, 'chapter-text')]") is { } content
             ? new ChapterHtmlPayload(content.InnerHtml)
@@ -102,7 +110,7 @@ public sealed class LightNovelWorld : MangaConnector
         return document;
     }
 
-    internal static string? Text(HtmlNode node, string xpath) => node.SelectSingleNode(xpath) is { } value
+    private static string? Text(HtmlNode node, string xpath) => node.SelectSingleNode(xpath) is { } value
         ? HtmlEntity.DeEntitize(value.InnerText).Replace("\uFEFF", string.Empty).Trim() : null;
     private static string ToUrl(string url) => string.IsNullOrWhiteSpace(url) ? string.Empty : new Uri(new Uri("https://lightnovelworld.org"), url).ToString();
     private static MangaReleaseStatus Status(string text) => text.Contains("Completed", StringComparison.OrdinalIgnoreCase) ? MangaReleaseStatus.Completed : MangaReleaseStatus.Continuing;

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using API.MangaConnectors;
 using HtmlAgilityPack;
 
@@ -12,18 +11,22 @@ public class LightNovelWorldChapterTitleTest
     [InlineData("Chapter 1648: New Deity title", "1648", "New Deity title")]
     public void ChapterTitles_AcceptObservedSeparators(string text, string number, string title)
     {
-        Match match = Regex.Match(text, @"Chapter\s+(?<number>[\d.]+)(?:\s*[-:]\s*|\s+)(?<title>.*)");
+        HtmlDocument document = new();
+        document.LoadHtml($"<div><div class='chapter-number'>{number}</div><h3>{text}</h3></div>");
+        (string Number, string Title)? chapter = LightNovelWorld.ParseChapter(document.DocumentNode.SelectSingleNode("//div")!);
 
-        Assert.Equal(number, match.Groups["number"].Value);
-        Assert.Equal(title, match.Groups["title"].Value);
+        Assert.NotNull(chapter);
+        Assert.Equal(number, chapter.Value.Number);
+        Assert.Equal(title, chapter.Value.Title);
     }
 
     [Fact]
     public void ChapterTitles_RemoveTheSiteBomBeforeParsing()
     {
         HtmlDocument document = new();
-        document.LoadHtml("<h3>Chapter \uFEFF252 Punishment</h3>");
+        document.LoadHtml("<div><div class='chapter-number'>252</div><h3>Chapter \uFEFF252 Punishment</h3></div>");
+        (string Number, string Title)? chapter = LightNovelWorld.ParseChapter(document.DocumentNode.SelectSingleNode("//div")!);
 
-        Assert.Equal("Chapter 252 Punishment", LightNovelWorld.Text(document.DocumentNode, "//h3"));
+        Assert.Equal(("252", "Punishment"), chapter);
     }
 }
