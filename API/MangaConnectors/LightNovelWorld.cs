@@ -71,8 +71,9 @@ public sealed class LightNovelWorld : MangaConnector
                 if (!match.Success || !title.Success)
                     continue;
                 Chapter chapter = new(mangaId.Obj, title.Groups["number"].Value, null, title.Groups["title"].Value.Trim());
-                MangaConnectorId<Chapter> id = new(chapter, this, match.Groups["id"].Value,
-                    $"https://lightnovelworld.org/novel/{mangaId.IdOnConnectorSite}/chapter/{match.Groups["id"].Value}/");
+                string chapterId = match.Groups["id"].Value;
+                MangaConnectorId<Chapter> id = new(chapter, this, CreateChapterId(mangaId.IdOnConnectorSite, chapterId),
+                    $"https://lightnovelworld.org/novel/{mangaId.IdOnConnectorSite}/chapter/{chapterId}/");
                 chapter.MangaConnectorIds.Add(id);
                 chapters.Add((chapter, id));
             }
@@ -83,6 +84,8 @@ public sealed class LightNovelWorld : MangaConnector
     internal static int GetChapterPageCount(HtmlDocument? document) => (document?.DocumentNode.SelectNodes("//main//select//option") ?? Enumerable.Empty<HtmlNode>())
         .Select(option => int.TryParse(option.GetAttributeValue("value", option.InnerText), out int page) ? page : 0)
         .DefaultIfEmpty(1).Max();
+
+    internal static string CreateChapterId(string mangaId, string chapterId) => $"{mangaId}-{chapterId}";
 
     internal override ChapterDownloadPayload GetChapterPayload(MangaConnectorId<Chapter> chapterId) =>
         GetDocument(chapterId.WebsiteUrl ?? string.Empty)?.DocumentNode.SelectSingleNode("//main//div[contains(@class, 'chapter-text')]") is { } content

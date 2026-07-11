@@ -13,4 +13,11 @@ public class LightNovelWorldTest
 
         Assert.Equal(29, LightNovelWorld.GetChapterPageCount(document));
     }
+
+    [Fact]
+    public void ChapterIds_AreUniqueAcrossNovels()
+    {
+        Assert.NotEqual(LightNovelWorld.CreateChapterId("lord-of-the-mysteries", "1"),
+            LightNovelWorld.CreateChapterId("the-innkeeper", "1"));
+    }
 }

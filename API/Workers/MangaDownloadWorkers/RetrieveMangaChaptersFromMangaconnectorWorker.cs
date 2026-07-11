@@ -89,7 +89,10 @@ public class RetrieveMangaChaptersFromMangaconnectorWorker(MangaConnectorId<Mang
         }
 
         if(await MangaContext.Sync(CancellationToken, GetType(), "Chapters retrieved") is { success: false } mangaContextException)
+        {
             Log.ErrorFormat("Failed to save database changes: {0}", mangaContextException.exceptionMessage);
+            return [];
+        }
 
         ActionsContext.Actions.Add(new ChaptersRetrievedActionRecord(manga));
         if(await ActionsContext.Sync(CancellationToken, GetType(), "Chapters retrieved") is { success: false } actionsContextException)
