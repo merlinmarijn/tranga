@@ -109,6 +109,17 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
         chapter.FileName = new FileInfo(saveArchiveFilePath).Name;
         if(await MangaContext.Sync(CancellationToken, GetType(), "Downloading complete") is { success: false } chapterContextException)
             Log.Error($"Failed to save database changes: {chapterContextException.exceptionMessage}");
+
+        if (chapter.ParentManga.ContentKind == ContentKind.Novel)
+        {
+            Manga novel = await MangaContext.MangaWithMetadata().Include(manga => manga.Chapters)
+                .SingleAsync(manga => manga.Key == chapter.ParentMangaId, CancellationToken);
+            if (!await ChapterExporter.ExportNovelSeries(novel, novel.Chapters.Where(novelChapter => novelChapter.Downloaded), CancellationToken))
+                Log.Warn($"Failed creating complete EPUB for {novel}");
+            else if (ChapterExporter.RenameLegacyNovelSources(novel.Chapters) > 0 &&
+                     await MangaContext.Sync(CancellationToken, GetType(), "Rename legacy novel chapter archives") is { success: false } renameException)
+                Log.Error($"Failed to save renamed novel chapter archives: {renameException.exceptionMessage}");
+        }
         
         Log.Debug($"Downloaded chapter {chapter}.");
 

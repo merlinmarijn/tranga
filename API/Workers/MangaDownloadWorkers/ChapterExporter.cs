@@ -15,6 +15,8 @@ namespace API.Workers.MangaDownloadWorkers;
 internal static class ChapterExporter
 {
     private static readonly ILog Log = LogManager.GetLogger(typeof(ChapterExporter));
+    // ponytail: serializes all series rebuilds; use per-series locks if concurrent series exports become a bottleneck.
+    private static readonly SemaphoreSlim SeriesExportLock = new(1, 1);
 
     internal static Task<bool> Export(ChapterDownloadPayload payload, MangaConnector connector, Chapter chapter,
         string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken) => payload switch
@@ -148,6 +150,128 @@ internal static class ChapterExporter
         await Write(archive, "OEBPS/nav.xhtml", navigation.ToString(), CompressionLevel.Optimal, cancellationToken);
         return true;
     }
+
+    internal static async Task<bool> ExportNovelSeries(Manga manga, IEnumerable<Chapter> chapters,
+        CancellationToken cancellationToken)
+    {
+        string outputPath = Path.Join(manga.FullDirectoryPath, "Complete.epub");
+        await SeriesExportLock.WaitAsync(cancellationToken);
+        try
+        {
+            List<(Chapter Chapter, string Contents)> downloaded = [];
+            foreach (Chapter chapter in chapters.OrderBy(chapter => chapter))
+            {
+                if (await ReadChapter(chapter, outputPath, cancellationToken) is { } contents)
+                    downloaded.Add((chapter, contents));
+            }
+            if (downloaded.Count == 0)
+                return false;
+
+            string temporaryPath = $"{outputPath}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                XNamespace dc = "http://purl.org/dc/elements/1.1/";
+                XNamespace opf = "http://www.idpf.org/2007/opf";
+                XNamespace epub = "http://www.idpf.org/2007/ops";
+                XNamespace xhtml = "http://www.w3.org/1999/xhtml";
+                XNamespace containerNamespace = "urn:oasis:names:tc:opendocument:xmlns:container";
+                string language = manga.OriginalLanguage ?? "en";
+                string author = string.Join(", ", manga.Authors.Select(item => item.AuthorName));
+                XDocument package = new(new XElement(opf + "package",
+                    new XAttribute("version", "3.0"), new XAttribute("unique-identifier", "book-id"), new XAttribute(XNamespace.Xml + "lang", language),
+                    new XElement(opf + "metadata",
+                        new XAttribute(XNamespace.Xmlns + "dc", dc),
+                        new XElement(dc + "identifier", new XAttribute("id", "book-id"), manga.Key),
+                        new XElement(dc + "title", manga.Name),
+                        new XElement(dc + "creator", author),
+                        new XElement(dc + "language", language),
+                        new XElement(dc + "description", manga.Description)),
+                    new XElement(opf + "manifest",
+                        new XElement(opf + "item", new XAttribute("id", "nav"), new XAttribute("href", "nav.xhtml"), new XAttribute("media-type", "application/xhtml+xml"), new XAttribute("properties", "nav")),
+                        downloaded.Select((item, index) => new XElement(opf + "item", new XAttribute("id", $"chapter-{index}"), new XAttribute("href", ChapterEntryName(item.Chapter)), new XAttribute("media-type", "application/xhtml+xml")))),
+                    new XElement(opf + "spine", downloaded.Select((_, index) => new XElement(opf + "itemref", new XAttribute("idref", $"chapter-{index}"))))));
+                XElement tableOfContents = new(xhtml + "ol");
+                foreach ((Chapter chapter, _) in downloaded)
+                    tableOfContents.Add(new XElement(xhtml + "li", new XElement(xhtml + "a",
+                        new XAttribute("href", ChapterEntryName(chapter)), ChapterTitle(chapter))));
+                XDocument navigation = new(new XElement(xhtml + "html",
+                    new XElement(xhtml + "head", new XElement(xhtml + "title", manga.Name)),
+                    new XElement(xhtml + "body", new XElement(xhtml + "nav",
+                        new XAttribute(XNamespace.Xml + "id", "toc"), new XAttribute(epub + "type", "toc"), tableOfContents))));
+                XDocument container = new(new XElement(containerNamespace + "container", new XAttribute("version", "1.0"),
+                    new XElement(containerNamespace + "rootfiles", new XElement(containerNamespace + "rootfile", new XAttribute("full-path", "OEBPS/content.opf"), new XAttribute("media-type", "application/oebps-package+xml")))));
+
+                using (ZipArchive archive = ZipFile.Open(temporaryPath, ZipArchiveMode.Create))
+                {
+                    await Write(archive, "mimetype", "application/epub+zip", CompressionLevel.NoCompression, cancellationToken);
+                    await Write(archive, "META-INF/container.xml", container.ToString(), CompressionLevel.Optimal, cancellationToken);
+                    await Write(archive, "OEBPS/content.opf", package.ToString(), CompressionLevel.Optimal, cancellationToken);
+                    await Write(archive, "OEBPS/nav.xhtml", navigation.ToString(), CompressionLevel.Optimal, cancellationToken);
+                    foreach ((Chapter chapter, string contents) in downloaded)
+                        await Write(archive, $"OEBPS/{ChapterEntryName(chapter)}", contents, CompressionLevel.Optimal, cancellationToken);
+                }
+                File.Move(temporaryPath, outputPath, true);
+                return true;
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                    File.Delete(temporaryPath);
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error($"Failed creating complete EPUB for {manga}", exception);
+            return false;
+        }
+        finally
+        {
+            SeriesExportLock.Release();
+        }
+    }
+
+    internal static int RenameLegacyNovelSources(IEnumerable<Chapter> chapters)
+    {
+        int renamed = 0;
+        foreach (Chapter chapter in chapters.Where(chapter =>
+                     string.Equals(Path.GetExtension(chapter.FileName), ".epub", StringComparison.OrdinalIgnoreCase) &&
+                     !string.Equals(chapter.FileName, "Complete.epub", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (chapter.FullArchiveFilePath is not { } sourcePath || !File.Exists(sourcePath))
+                continue;
+            string destinationPath = Path.ChangeExtension(sourcePath, ".tranga");
+            if (File.Exists(destinationPath))
+            {
+                Log.Warn($"Not renaming legacy EPUB because {destinationPath} already exists.");
+                continue;
+            }
+            File.Move(sourcePath, destinationPath);
+            chapter.FileName = Path.GetFileName(destinationPath);
+            renamed++;
+        }
+        return renamed;
+    }
+
+    private static async Task<string?> ReadChapter(Chapter chapter, string seriesPath, CancellationToken cancellationToken)
+    {
+        string? path = chapter.FullArchiveFilePath;
+        if (path is not null && File.Exists(path) && !string.Equals(path, seriesPath, StringComparison.OrdinalIgnoreCase))
+        {
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            if (archive.GetEntry("OEBPS/chapter.xhtml") is { } entry)
+                return await new StreamReader(entry.Open()).ReadToEndAsync(cancellationToken);
+        }
+        if (File.Exists(seriesPath))
+        {
+            using ZipArchive archive = ZipFile.OpenRead(seriesPath);
+            if (archive.GetEntry($"OEBPS/{ChapterEntryName(chapter)}") is { } entry)
+                return await new StreamReader(entry.Open()).ReadToEndAsync(cancellationToken);
+        }
+        return null;
+    }
+
+    private static string ChapterEntryName(Chapter chapter) => $"chapters/{chapter.Key}.xhtml";
+    private static string ChapterTitle(Chapter chapter) => chapter.Title is { Length: > 0 } title ? title : $"Chapter {chapter.ChapterNumber}";
 
     private static IEnumerable<XNode> ToXhtml(HtmlNode node, XNamespace xhtml)
     {

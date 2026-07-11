@@ -90,6 +90,53 @@ public class ChapterDownloadPayloadTest
         }
     }
 
+    [Fact]
+    public async Task NovelChapters_AreCombinedInChapterOrder()
+    {
+        string libraryPath = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString());
+        try
+        {
+            Manga manga = new("Novel", "Description", "", MangaReleaseStatus.Unreleased, [], [], [], [],
+                new FileLibrary(libraryPath, "Test library"), contentKind: ContentKind.Novel);
+            Chapter first = new(manga, "1", null, "First");
+            Chapter twoHundred = new(manga, "200", null, "Two hundred");
+            Chapter middle = new(manga, "101", null, "Middle");
+            manga.Chapters = [first, twoHundred, middle];
+            Assert.EndsWith(".tranga", first.FullArchiveFilePath, StringComparison.OrdinalIgnoreCase);
+
+            List<Chapter> downloaded = [];
+            foreach ((Chapter chapter, string contents) in new[]
+                     {
+                         (first, "<p>First text</p>"), (twoHundred, "<p>Last text</p>"), (middle, "<p>Middle text</p>")
+                     })
+            {
+                Assert.True(await ChapterExporter.Export(new ChapterHtmlPayload(contents), new ImageConnector(), chapter,
+                    chapter.FullArchiveFilePath!, null, () => Task.CompletedTask, CancellationToken.None));
+                if (chapter == first)
+                {
+                    string sourcePath = Assert.IsType<string>(chapter.FullArchiveFilePath);
+                    string legacyPath = Path.ChangeExtension(sourcePath, ".epub");
+                    File.Move(sourcePath, legacyPath);
+                    chapter.FileName = Path.GetFileName(legacyPath);
+                }
+                downloaded.Add(chapter);
+                Assert.True(await ChapterExporter.ExportNovelSeries(manga, downloaded, CancellationToken.None));
+                Assert.Equal(chapter == first ? 1 : 0, ChapterExporter.RenameLegacyNovelSources(downloaded));
+            }
+
+            using ZipArchive archive = ZipFile.OpenRead(Path.Join(manga.FullDirectoryPath, "Complete.epub"));
+            string navigation = await new StreamReader(archive.GetEntry("OEBPS/nav.xhtml")!.Open()).ReadToEndAsync();
+            Assert.True(navigation.IndexOf("First", StringComparison.Ordinal) < navigation.IndexOf("Middle", StringComparison.Ordinal));
+            Assert.True(navigation.IndexOf("Middle", StringComparison.Ordinal) < navigation.IndexOf("Two hundred", StringComparison.Ordinal));
+            Assert.Contains("Middle text", await new StreamReader(archive.GetEntry($"OEBPS/chapters/{middle.Key}.xhtml")!.Open()).ReadToEndAsync());
+        }
+        finally
+        {
+            if (Directory.Exists(libraryPath))
+                Directory.Delete(libraryPath, true);
+        }
+    }
+
     private class ImageConnector : MangaConnector
     {
         public ImageConnector() : base("Image test", ["en"], ["example.test"], "https://example.test/icon.png")
