@@ -102,8 +102,8 @@ public sealed class LightNovelWorld : MangaConnector
         return document;
     }
 
-    private static string? Text(HtmlNode node, string xpath) => node.SelectSingleNode(xpath) is { } value
-        ? HtmlEntity.DeEntitize(value.InnerText).Trim() : null;
+    internal static string? Text(HtmlNode node, string xpath) => node.SelectSingleNode(xpath) is { } value
+        ? HtmlEntity.DeEntitize(value.InnerText).Replace("\uFEFF", string.Empty).Trim() : null;
     private static string ToUrl(string url) => string.IsNullOrWhiteSpace(url) ? string.Empty : new Uri(new Uri("https://lightnovelworld.org"), url).ToString();
     private static MangaReleaseStatus Status(string text) => text.Contains("Completed", StringComparison.OrdinalIgnoreCase) ? MangaReleaseStatus.Completed : MangaReleaseStatus.Continuing;
 }
