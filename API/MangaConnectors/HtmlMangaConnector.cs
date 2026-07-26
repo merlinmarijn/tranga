@@ -3,6 +3,7 @@ using System.Web;
 using API.MangaDownloadClients;
 using API.Schema.MangaContext;
 using HtmlAgilityPack;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace API.MangaConnectors;
@@ -75,13 +76,27 @@ public abstract class HtmlMangaConnector : MangaConnector
     {
         HtmlDocument? document = GetDocument(mangaId.WebsiteUrl ?? BuildUrl(Definition.MangaUrl, mangaId.IdOnConnectorSite), RequestType.Default);
         if (Definition.NextData && document is not null)
-            return NextData(document, "initialManga")?["chapters"] is not JArray chapters
+        {
+            JToken? pageProps = NextDataPageProps(document);
+            JArray? chapters = null;
+            if (Definition.ChapterApiUrl is not null
+                && pageProps?.SelectToken(Definition.ChapterApiIdPath)?.Value<string>() is { } apiId
+                && !string.IsNullOrWhiteSpace(apiId))
+            {
+                JToken? response = GetJson(BuildUrl(Definition.ChapterApiUrl, apiId), RequestType.Default);
+                chapters = response?.SelectToken(Definition.ChapterApiItemsPath) as JArray;
+            }
+
+            chapters ??= pageProps?["initialManga"]?["chapters"] as JArray;
+            return chapters is null
                 ? []
                 : chapters.Select(chapter => CreateChapter(mangaId.Obj, ToAbsoluteUrl(chapter.Value<string>("url") ?? string.Empty), chapter.Value<string>("name") ?? string.Empty))
                     .Where(result => result.HasValue)
                     .Select(result => result!.Value)
+                    .DistinctBy(result => result.Item2.IdOnConnectorSite)
                     .OrderBy(result => result.Item1, new Chapter.ChapterComparer())
                     .ToArray();
+        }
 
         HtmlNodeCollection? links = document?.DocumentNode.SelectNodes(Definition.ChapterLinkXPath);
         if (links is null)
@@ -174,14 +189,20 @@ public abstract class HtmlMangaConnector : MangaConnector
             return null;
 
         int? volume = int.TryParse(match.Groups["volume"].Value, out int parsedVolume) ? parsedVolume : null;
+        string number = match.Groups["urlNumber"].Success
+            ? match.Groups["urlNumber"].Value.Replace('-', '.')
+            : match.Groups["number"].Value;
         string title = match.Groups["title"].Success ? match.Groups["title"].Value.Trim() : string.Empty;
-        Chapter chapter = new(manga, match.Groups["number"].Value, volume, string.IsNullOrWhiteSpace(title) ? null : title);
+        Chapter chapter = new(manga, number, volume, string.IsNullOrWhiteSpace(title) ? null : title);
         MangaConnectorId<Chapter> connectorId = new(chapter, this, url, url);
         chapter.MangaConnectorIds.Add(connectorId);
         return (chapter, connectorId);
     }
 
     private static JToken? NextData(HtmlDocument document, string key)
+        => NextDataPageProps(document)?[key];
+
+    private static JToken? NextDataPageProps(HtmlDocument document)
     {
         string? json = document.DocumentNode.SelectSingleNode("//script[@id='__NEXT_DATA__']")?.InnerText;
         if (string.IsNullOrWhiteSpace(json))
@@ -189,10 +210,30 @@ public abstract class HtmlMangaConnector : MangaConnector
 
         try
         {
-            return JObject.Parse(json)["props"]?["pageProps"]?[key];
+            return JObject.Parse(json)["props"]?["pageProps"];
         }
         catch (Exception)
         {
+            return null;
+        }
+    }
+
+    private JToken? GetJson(string url, RequestType requestType)
+    {
+        using HttpResponseMessage response = downloadClient.MakeRequest(url, requestType).GetAwaiter().GetResult();
+        if (!response.IsSuccessStatusCode)
+        {
+            Log.WarnFormat("{0} returned {1}", url, response.StatusCode);
+            return null;
+        }
+
+        try
+        {
+            return JToken.Parse(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+        catch (JsonException exception)
+        {
+            Log.Warn($"Could not parse JSON returned by {url}", exception);
             return null;
         }
     }
@@ -249,6 +290,9 @@ public sealed record HtmlConnectorDefinition(
     public string PageImageAttribute { get; init; } = "src";
     public string? PageImageRegex { get; init; }
     public bool NextData { get; init; }
+    public string? ChapterApiUrl { get; init; }
+    public string ChapterApiIdPath { get; init; } = "initialManga.id";
+    public string ChapterApiItemsPath { get; init; } = "data.chapters";
     public HtmlValueSelector? Description { get; init; }
     public HtmlValueSelector? Cover { get; init; }
     public HtmlValueSelector? Status { get; init; }
@@ -267,8 +311,14 @@ public sealed record HtmlConnectorDefinition(
             throw new ArgumentException("MangaIdRegex needs a named 'id' group and ChapterRegex needs a named 'number' group.");
         if (PageImageRegex is not null && !PageImageRegex.Contains("(?<url>", StringComparison.Ordinal))
             throw new ArgumentException("PageImageRegex needs a named 'url' group.");
+        if (ChapterApiUrl is not null
+            && (!NextData || !ChapterApiUrl.Contains("{id}", StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(ChapterApiIdPath) || string.IsNullOrWhiteSpace(ChapterApiItemsPath)))
+            throw new ArgumentException("ChapterApiUrl requires NextData, an '{id}' placeholder, and JSON paths for the API ID and chapter items.");
 
         _ = new Uri(BaseUrl, UriKind.Absolute);
+        if (ChapterApiUrl is not null)
+            _ = new Uri(ChapterApiUrl.Replace("{id}", "id"), UriKind.Absolute);
         _ = new Regex(MangaIdRegex);
         _ = new Regex(ChapterRegex);
         if (PageImageRegex is not null)

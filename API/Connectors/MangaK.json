@@ -16,6 +16,7 @@
   "originalLanguage": "en",
   "chapterLinkXPath": "//a[contains(@href, '/chapter-')]",
   "chapterRegex": "/(?<id>chapter-(?<urlNumber>\\d+(?:-\\d+)?)).*?Chapter\\s+(?<number>\\d+(?:\\.\\d+)?)",
+  "chapterApiUrl": "https://api.mangak.io/titles/{id}/chapters",
   "pageImageXPath": "//main//img",
   "pageImageRegex": "\"images\":\\[(?:\"(?<url>https://[^\"]+)\"(?:,)?)+\\]",
   "nextData": true

@@ -251,7 +251,7 @@ public class Chapter : Identifiable, IComparable<Chapter>
             j++;
         }
 
-        return 0;
+        return ch1Arr.Length.CompareTo(ch2Arr.Length);
     }
 
     internal string GetComicInfoXmlString()
