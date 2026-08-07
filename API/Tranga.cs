@@ -79,7 +79,7 @@ public static class Tranga
     public static void AddWorker(BaseWorker worker)
     {
         Log.DebugFormat("Adding Worker {0}", worker);
-        KnownWorkers.Add(worker);
+        KnownWorkers.TryAdd(worker, 0);
         if(worker is not IPeriodic)
             StartWorker(worker, RemoveFromKnownWorkers(worker));
         else
@@ -118,8 +118,7 @@ public static class Tranga
 
     private static Action RemoveFromKnownWorkers(BaseWorker worker) => () =>
     {
-        if (KnownWorkers.Contains(worker))
-            KnownWorkers.Remove(worker);
+        KnownWorkers.TryRemove(worker, out _);
     };
     
     public static void AddWorkers(IEnumerable<BaseWorker> workers)
@@ -128,8 +127,9 @@ public static class Tranga
             AddWorker(baseWorker);
     }
 
-    private static readonly HashSet<BaseWorker> KnownWorkers = new();
-    public static BaseWorker[] GetKnownWorkers() =>  KnownWorkers.ToArray();
+    // Completion callbacks mutate this collection while API requests enumerate it.
+    private static readonly ConcurrentDictionary<BaseWorker, byte> KnownWorkers = new();
+    public static BaseWorker[] GetKnownWorkers() => KnownWorkers.Keys.ToArray();
     private static readonly ConcurrentDictionary<BaseWorker, Task<BaseWorker[]>> RunningWorkers = new();
     private static readonly Queue<(BaseWorker Worker, Action? FinishedCallback)> QueuedWorkers = new();
     private static readonly object WorkerQueueLock = new();
