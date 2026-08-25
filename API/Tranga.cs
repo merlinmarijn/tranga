@@ -62,9 +62,6 @@ public static class Tranga
         AddWorker(StartNewChapterDownloadsWorker);
         AddWorker(RemoveOldNotificationsWorker);
         AddWorker(UpdateCoversWorker);
-        
-        if(Constants.UpdateChaptersDownloadedBeforeStarting)
-            AddWorker(UpdateChaptersDownloadedWorker);
     }
 
     internal static bool TryGetMangaConnector(string name, [NotNullWhen(true)]out MangaConnector? mangaConnector)

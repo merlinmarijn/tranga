@@ -23,27 +23,39 @@ public class UpdateChaptersDownloadedWorker(TimeSpan? interval = null, IEnumerab
     
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
-        Log.Debug("Checking chapter files...");
-        List<Chapter> chapters = await MangaContext.Chapters.ToListAsync(CancellationToken);
-        Log.DebugFormat("Checking {0} chapters...", chapters.Count);
-        foreach (Chapter chapter in chapters)
+        try
         {
-            try
+            Log.Debug("Checking chapter files...");
+            List<Chapter> chapters = await MangaContext.Chapters
+                .IgnoreAutoIncludes()
+                .Include(chapter => chapter.ParentManga)
+                .ThenInclude(manga => manga.Library)
+                .Include(chapter => chapter.ParentManga)
+                .ThenInclude(manga => manga.Authors)
+                .AsSplitQuery()
+                .ToListAsync(CancellationToken);
+            Log.DebugFormat("Checking {0} chapters...", chapters.Count);
+            foreach (Chapter chapter in chapters)
             {
-                bool downloaded = await chapter.CheckDownloaded(MangaContext, CancellationToken);
-                chapter.Downloaded = downloaded;
-                if (!downloaded)
-                    chapter.FileName = null;
+                try
+                {
+                    chapter.CheckDownloadedOnDisk();
+                }
+                catch (Exception exception)
+                {
+                    Log.Error($"Failed checking downloaded state for {chapter.Key}.", exception);
+                }
             }
-            catch (Exception exception)
-            {
-                Log.Error(exception);
-            }
-        }
 
-        if(await MangaContext.Sync(CancellationToken, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } e)
-            Log.ErrorFormat("Failed to save database changes: {0}", e.exceptionMessage);
-        
-        return [];
+            if(await MangaContext.Sync(CancellationToken, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } e)
+                Log.ErrorFormat("Failed to save database changes: {0}", e.exceptionMessage);
+
+            return [];
+        }
+        finally
+        {
+            // This periodic worker is a singleton; do not retain the full library graph until its next run.
+            MangaContext.ChangeTracker.Clear();
+        }
     }
 }

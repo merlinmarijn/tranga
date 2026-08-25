@@ -205,10 +205,14 @@ catch (Exception e)
     return;
 }
 
-log.Info("Starting Tranga.");
 Tranga.ServiceProvider = app.Services;
+
+// Start listening before the potentially long chapter-file scan so container health checks can succeed.
+log.Info("Running app.");
+await app.StartAsync();
+
+log.Info("Starting Tranga.");
 Tranga.StartupTasks();
 Tranga.AddDefaultWorkers();
 
-log.Info("Running app.");
-await app.RunAsync();
+await app.WaitForShutdownAsync();

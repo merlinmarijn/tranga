@@ -90,47 +90,62 @@ public class Chapter : Identifiable, IComparable<Chapter>
                .FirstOrDefaultAsync(c => c.Key == this.Key, token??CancellationToken.None) is not { } chapter)
             throw new KeyNotFoundException("Unable to find chapter");
 
-        if (chapter.ParentManga.Library is null || (chapter.FileName is null && Constants.DownloadedChaptersCheckMatchExactName))
+        bool downloaded = chapter.CheckDownloadedOnDisk();
+        if (!ReferenceEquals(chapter, this))
         {
-            this.Downloaded = false;
-            this.FileName = null;
+            Downloaded = chapter.Downloaded;
+            FileName = chapter.FileName;
+        }
+
+        await context.Sync(token??CancellationToken.None, GetType(), $"CheckDownloaded {this} {downloaded}");
+        return downloaded;
+    }
+
+    /// <summary>
+    /// Checks the filesystem using already-loaded chapter navigation properties.
+    /// </summary>
+    internal bool CheckDownloadedOnDisk()
+    {
+        if (ParentManga.Library is null || (FileName is null && Constants.DownloadedChaptersCheckMatchExactName))
+        {
+            Downloaded = false;
+            FileName = null;
             return false;
         }
-        
-        if (File.Exists(chapter.FullArchiveFilePath))
+
+        if (File.Exists(FullArchiveFilePath))
         {
-            this.Downloaded = true;
-            this.FileName = new FileInfo(chapter.FullArchiveFilePath).Name;
+            Downloaded = true;
+            FileName = new FileInfo(FullArchiveFilePath!).Name;
         }else if (Constants.DownloadedChaptersCheckMatchExactName)
         {
-            this.Downloaded = false;
-            this.FileName = null;
+            Downloaded = false;
+            FileName = null;
         }else
         {
-            string directoryPath = chapter.ParentManga.FullDirectoryPath;
+            string directoryPath = ParentManga.FullDirectoryPath;
             if (!Directory.Exists(directoryPath))
             {
-                this.Downloaded = false;
+                Downloaded = false;
                 return false;
             }
 
             string? existingFile = Directory.EnumerateFiles(directoryPath).Select(path => new FileInfo(path).Name).FirstOrDefault(file =>
             {
-                double similarity = NeedlemanWunschStringUtil.CalculateSimilarityPercentage(file, this.FileName ?? GetArchiveFileName());
+                double similarity = NeedlemanWunschStringUtil.CalculateSimilarityPercentage(file, FileName ?? GetArchiveFileName());
                 if (similarity > 90)
                     return true;
 
                 Match chMatch = _chRex.Match(file);
                 if (!chMatch.Groups[1].Success)
                     return false;
-                return chMatch.Groups[1].Value == this.ChapterNumber;
+                return chMatch.Groups[1].Value == ChapterNumber;
             });
-            this.Downloaded = existingFile is not null;
-            this.FileName = existingFile is not null ? new FileInfo(existingFile).Name : null;
+            Downloaded = existingFile is not null;
+            FileName = existingFile is not null ? new FileInfo(existingFile).Name : null;
         }
-        
-        await context.Sync(token??CancellationToken.None, GetType(), $"CheckDownloaded {this} {this.Downloaded}");
-        return this.Downloaded;
+
+        return Downloaded;
     } 
     
     /// Placeholders:
