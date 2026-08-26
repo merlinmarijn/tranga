@@ -3611,6 +3611,21 @@
             "description": "ChapterId if Record is API.Schema.ActionsContext.Actions.Generic.IActionWithMangaRecord",
             "nullable": true
           },
+          "mangaTitle": {
+            "type": "string",
+            "description": "Display title of the Manga associated with this record.",
+            "nullable": true
+          },
+          "chapterNumber": {
+            "type": "string",
+            "description": "Chapter number associated with this record.",
+            "nullable": true
+          },
+          "chapterTitle": {
+            "type": "string",
+            "description": "Chapter title associated with this record.",
+            "nullable": true
+          },
           "from": {
             "type": "string",
             "description": "FromPath if Record is API.Schema.ActionsContext.Actions.DataMovedActionRecord",
@@ -4740,6 +4755,26 @@
           },
           "state": {
             "$ref": "#/components/schemas/WorkerExecutionState"
+          },
+          "mangaId": {
+            "type": "string",
+            "nullable": true
+          },
+          "mangaTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "chapterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "chapterNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "chapterTitle": {
+            "type": "string",
+            "nullable": true
           },
           "key": {
             "maxLength": 64,

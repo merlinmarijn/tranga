@@ -1,8 +1,11 @@
 ﻿using API.Controllers.DTOs;
+using API.Schema.MangaContext;
 using API.Workers;
+using API.Workers.MangaDownloadWorkers;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using static Microsoft.AspNetCore.Http.StatusCodes;
 // ReSharper disable InconsistentNaming
 
@@ -11,7 +14,7 @@ namespace API.Controllers;
 [ApiVersion(2)]
 [ApiController]
 [Route("v{version:apiVersion}/[controller]")]
-public class WorkerController : ControllerBase
+public class WorkerController(MangaContext context) : ControllerBase
 {
     /// <summary>
     /// Returns all <see cref="BaseWorker"/>
@@ -19,11 +22,11 @@ public class WorkerController : ControllerBase
     /// <response code="200"><see cref="Worker"/></response>
     [HttpGet]
     [ProducesResponseType<List<Worker>>(Status200OK, "application/json")]
-    public Ok<List<Worker>> GetWorkers()
+    public async Task<Ok<List<Worker>>> GetWorkers()
     {
-        IEnumerable<Worker> result = Tranga.GetKnownWorkers().Select(w =>
-            new Worker(w.Key, w.AllDependencies.Select(d => d.Key), w.MissingDependencies.Select(d => d.Key), w.AllDependenciesFulfilled, w.State));
-        return TypedResults.Ok(result.ToList());
+        BaseWorker[] workers = Tranga.GetKnownWorkers();
+        IReadOnlyDictionary<string, DownloadDetails> downloadDetails = await GetDownloadDetails(workers);
+        return TypedResults.Ok(workers.Select(worker => ToDto(worker, downloadDetails)).ToList());
     }
 
     /// <summary>
@@ -33,11 +36,11 @@ public class WorkerController : ControllerBase
     /// <response code="200"></response>
     [HttpGet("State/{State}")]
     [ProducesResponseType<List<Worker>>(Status200OK, "application/json")]
-    public Ok<List<Worker>> GetWorkersInState(WorkerExecutionState State)
+    public async Task<Ok<List<Worker>>> GetWorkersInState(WorkerExecutionState State)
     {
-        IEnumerable<Worker> result = Tranga.GetKnownWorkers().Where(worker => worker.State == State).Select(w =>
-            new Worker(w.Key, w.AllDependencies.Select(d => d.Key), w.MissingDependencies.Select(d => d.Key), w.AllDependenciesFulfilled, w.State));
-        return TypedResults.Ok(result.ToList());
+        BaseWorker[] workers = Tranga.GetKnownWorkers().Where(worker => worker.State == State).ToArray();
+        IReadOnlyDictionary<string, DownloadDetails> downloadDetails = await GetDownloadDetails(workers);
+        return TypedResults.Ok(workers.Select(worker => ToDto(worker, downloadDetails)).ToList());
     }
 
     /// <summary>
@@ -49,14 +52,13 @@ public class WorkerController : ControllerBase
     [HttpGet("{WorkerId}")]
     [ProducesResponseType<Worker>(Status200OK, "application/json")]
     [ProducesResponseType<string>(Status404NotFound, "text/plain")]
-    public Results<Ok<Worker>, NotFound<string>> GetWorker(string WorkerId)
+    public async Task<Results<Ok<Worker>, NotFound<string>>> GetWorker(string WorkerId)
     {
         if(Tranga.GetKnownWorkers().FirstOrDefault(w => w.Key == WorkerId) is not { } w)
             return TypedResults.NotFound(nameof(WorkerId));
         
-        Worker result = new (w.Key, w.AllDependencies.Select(d => d.Key), w.MissingDependencies.Select(d => d.Key), w.AllDependenciesFulfilled, w.State);
-        
-        return TypedResults.Ok(result);
+        IReadOnlyDictionary<string, DownloadDetails> downloadDetails = await GetDownloadDetails([w]);
+        return TypedResults.Ok(ToDto(w, downloadDetails));
     }
 
     /// <summary>
@@ -81,4 +83,65 @@ public class WorkerController : ControllerBase
         Tranga.StopWorker(worker);
         return TypedResults.Ok();
     }
+
+    private async Task<IReadOnlyDictionary<string, DownloadDetails>> GetDownloadDetails(IEnumerable<BaseWorker> workers)
+    {
+        string[] connectorIds = workers
+            .OfType<DownloadChapterFromMangaconnectorWorker>()
+            .Select(worker => worker.ChapterIdId)
+            .Distinct()
+            .ToArray();
+
+        if (connectorIds.Length == 0)
+            return new Dictionary<string, DownloadDetails>();
+
+        var details = await context.MangaConnectorToChapter
+            .Where(connectorId => connectorIds.Contains(connectorId.Key))
+            .Select(connectorId => new
+            {
+                ConnectorId = connectorId.Key,
+                ChapterId = connectorId.ObjId,
+                MangaId = connectorId.Obj.ParentMangaId,
+                MangaTitle = connectorId.Obj.ParentManga.Name,
+                connectorId.Obj.ChapterNumber,
+                connectorId.Obj.Title
+            })
+            .ToListAsync(HttpContext.RequestAborted);
+
+        return details.ToDictionary(
+            detail => detail.ConnectorId,
+            detail => new DownloadDetails(
+                detail.MangaId,
+                detail.MangaTitle,
+                detail.ChapterId,
+                detail.ChapterNumber,
+                detail.Title));
+    }
+
+    private static Worker ToDto(BaseWorker worker, IReadOnlyDictionary<string, DownloadDetails> downloadDetails)
+    {
+        DownloadDetails? details = worker is DownloadChapterFromMangaconnectorWorker downloadWorker
+                                   && downloadDetails.TryGetValue(downloadWorker.ChapterIdId, out DownloadDetails? found)
+            ? found
+            : null;
+
+        return new Worker(
+            worker.Key,
+            worker.AllDependencies.Select(dependency => dependency.Key),
+            worker.MissingDependencies.Select(dependency => dependency.Key),
+            worker.AllDependenciesFulfilled,
+            worker.State,
+            details?.MangaId,
+            details?.MangaTitle,
+            details?.ChapterId,
+            details?.ChapterNumber,
+            details?.ChapterTitle);
+    }
+
+    private sealed record DownloadDetails(
+        string MangaId,
+        string MangaTitle,
+        string ChapterId,
+        string ChapterNumber,
+        string? ChapterTitle);
 }

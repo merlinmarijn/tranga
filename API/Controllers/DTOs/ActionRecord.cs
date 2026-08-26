@@ -8,7 +8,11 @@ namespace API.Controllers.DTOs;
 
 public sealed record ActionRecord : Identifiable
 {
-    public ActionRecord(Schema.ActionsContext.ActionRecord actionRecord) : base(actionRecord.Key)
+    public ActionRecord(
+        Schema.ActionsContext.ActionRecord actionRecord,
+        string? mangaTitle = null,
+        string? chapterNumber = null,
+        string? chapterTitle = null) : base(actionRecord.Key)
     {
         Action = actionRecord.Action;
         PerformedAt = actionRecord.PerformedAt;
@@ -18,6 +22,9 @@ public sealed record ActionRecord : Identifiable
         To = actionRecord is DataMovedActionRecord to ? to.To : null;
         Filename = actionRecord is CoverDownloadedActionRecord filename ? filename.Filename : null;
         MetadataFetcher = actionRecord is MetadataUpdatedActionRecord metadata ? metadata.MetadataFetcher : null;
+        MangaTitle = mangaTitle;
+        ChapterNumber = chapterNumber;
+        ChapterTitle = chapterTitle;
     }
     
     /// <summary>
@@ -43,6 +50,24 @@ public sealed record ActionRecord : Identifiable
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ChapterId { get; init; }
+
+    /// <summary>
+    /// Display title of the Manga associated with this record.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MangaTitle { get; init; }
+
+    /// <summary>
+    /// Chapter number associated with this record.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChapterNumber { get; init; }
+
+    /// <summary>
+    /// Chapter title associated with this record.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChapterTitle { get; init; }
     
     /// <summary>
     /// FromPath if Record is <see cref="Schema.ActionsContext.Actions.DataMovedActionRecord"/>

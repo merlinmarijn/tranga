@@ -2,6 +2,8 @@ using API.Controllers.DTOs;
 using API.Controllers.Requests;
 using API.Schema.ActionsContext;
 using API.Schema.ActionsContext.Actions;
+using API.Schema.ActionsContext.Actions.Generic;
+using API.Schema.MangaContext;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -14,7 +16,7 @@ namespace API.Controllers;
 [ApiVersion(2)]
 [ApiController]
 [Route("v{v:apiVersion}/[controller]")]
-public class ActionsController(ActionsContext context) : ControllerBase
+public class ActionsController(ActionsContext context, MangaContext mangaContext) : ControllerBase
 {
     /// <summary>
     /// Returns the available Action Types (<see cref="Actions"/>)
@@ -52,6 +54,39 @@ public class ActionsController(ActionsContext context) : ControllerBase
             is not { } result)
             return TypedResults.InternalServerError();
         
-        return TypedResults.Ok(result.ToType(a => new ActionRecord(a)));
+        var actions = result.Data.ToList();
+        string[] mangaIds = actions
+            .OfType<IActionWithMangaRecord>()
+            .Select(action => action.MangaId)
+            .Distinct()
+            .ToArray();
+        string[] chapterIds = actions
+            .OfType<IActionWithChapterRecord>()
+            .Select(action => action.ChapterId)
+            .Distinct()
+            .ToArray();
+
+        Dictionary<string, string> mangaTitles = mangaIds.Length == 0
+            ? []
+            : await mangaContext.Mangas
+                .Where(manga => mangaIds.Contains(manga.Key))
+                .ToDictionaryAsync(manga => manga.Key, manga => manga.Name, HttpContext.RequestAborted);
+
+        var chapters = chapterIds.Length == 0
+            ? []
+            : await mangaContext.Chapters
+                .Where(chapter => chapterIds.Contains(chapter.Key))
+                .Select(chapter => new { chapter.Key, chapter.ChapterNumber, chapter.Title })
+                .ToListAsync(HttpContext.RequestAborted);
+        var chaptersById = chapters.ToDictionary(chapter => chapter.Key);
+
+        return TypedResults.Ok(result.ToType(action =>
+        {
+            string? mangaId = action is IActionWithMangaRecord mangaAction ? mangaAction.MangaId : null;
+            string? chapterId = action is IActionWithChapterRecord chapterAction ? chapterAction.ChapterId : null;
+            chaptersById.TryGetValue(chapterId ?? string.Empty, out var chapter);
+            mangaTitles.TryGetValue(mangaId ?? string.Empty, out string? mangaTitle);
+            return new ActionRecord(action, mangaTitle, chapter?.ChapterNumber, chapter?.Title);
+        }));
     }
 }
