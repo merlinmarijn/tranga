@@ -49,7 +49,7 @@ USER $UNAME
 # Env vars for PuppeteerSharp (Chromium path + no-sandbox args)
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 ENV CHROME_BIN=/usr/bin/google-chrome-stable
-ENV PUPPETEER_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu --no-zygote --single-process"
+ENV PUPPETEER_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu --no-zygote"
 
 
 WORKDIR /publish
