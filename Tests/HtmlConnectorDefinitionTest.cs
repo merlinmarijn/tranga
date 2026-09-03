@@ -64,6 +64,7 @@ public class HtmlConnectorDefinitionTest
         const string chapterApiResponse = """
                                           {"data":{"chapters":[
                                             {"url":"/series/chapter-18-2","name":"Chapter 18-2"},
+                                            {"url":"/series/chapter-48-300000000000004","name":"Chapter 48.300000000000004"},
                                             {"url":"/series/chapter-18-1","name":"Chapter 18-1"},
                                             {"url":"/series/chapter-18","name":"Chapter 18"}
                                           ]}}

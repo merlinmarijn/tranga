@@ -192,6 +192,12 @@ public abstract class HtmlMangaConnector : MangaConnector
         string number = match.Groups["urlNumber"].Success
             ? match.Groups["urlNumber"].Value.Replace('-', '.')
             : match.Groups["number"].Value;
+        if (number.Length > 10 || number.Split('.').Any(part => !int.TryParse(part, out _)))
+        {
+            Log.WarnFormat("Ignoring chapter with unsupported number '{0}' at {1}", number, url);
+            return null;
+        }
+
         string title = match.Groups["title"].Success ? match.Groups["title"].Value.Trim() : string.Empty;
         Chapter chapter = new(manga, number, volume, string.IsNullOrWhiteSpace(title) ? null : title);
         MangaConnectorId<Chapter> connectorId = new(chapter, this, url, url);
