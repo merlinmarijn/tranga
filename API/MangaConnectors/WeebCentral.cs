@@ -14,6 +14,8 @@ namespace API.MangaConnectors;
 
 public class WeebCentral : MangaConnector
 {
+    private const string BaseUrl = "https://weebcentral.com";
+
     public WeebCentral() : base("WeebCentral", new[] { "en" }, new[] { "weebcentral.com" }, "https://weebcentral.com/static/images/brand.png")
     {
         this.downloadClient = new HttpDownloadClient(); // Use Http for all
@@ -23,7 +25,7 @@ public class WeebCentral : MangaConnector
     {
         Log.InfoFormat("Searching: {0}", mangaSearchName);
         string sanitizedTitle = string.Join(' ', Regex.Matches(mangaSearchName, @"[A-Za-z]+").Where(m => m.Value.Length > 0)).ToLowerInvariant();
-        string requestUrl = $"https://weebcentral.com/search/data?limit=32&offset=0&text={HttpUtility.UrlEncode(sanitizedTitle)}&sort=Best+Match&order=Ascending&official=Any&display_mode=Minimal%20Display";
+        string requestUrl = $"{BaseUrl}/search/data?limit=32&offset=0&text={HttpUtility.UrlEncode(sanitizedTitle)}&sort=Best+Match&order=Ascending&official=Any&display_mode=Minimal%20Display";
         HttpResponseMessage response = downloadClient.MakeRequest(requestUrl, RequestType.Default).GetAwaiter().GetResult();
 
         if (!response.IsSuccessStatusCode)
@@ -49,10 +51,9 @@ public class WeebCentral : MangaConnector
         List<(Manga, MangaConnectorId<Manga>)> mangas = new();
         foreach (HtmlNode node in nodes)
         {
-            string href = node.GetAttributeValue("href", "");
-            if (!string.IsNullOrEmpty(href))
+            string href = node.GetAttributeValue("href", "").Trim();
+            if (TryGetAbsoluteUrl(href, out string fullUrl))
             {
-                string fullUrl = $"{href}";
                 if (seenUrls.Add(fullUrl))
                 {
                     Log.DebugFormat("Fetching from {0}", fullUrl); // Debug URL
@@ -76,17 +77,20 @@ public class WeebCentral : MangaConnector
 
    public override (Manga, MangaConnectorId<Manga>)? GetMangaFromUrl(string url)
     {
+        if (!TryGetAbsoluteUrl(url, out string absoluteUrl))
+            return null;
+
         Log.InfoFormat("Fetching manga from URL: {0}", url);
         // Robust regex: Capture full slug before optional UID
-        Match urlMatch = Regex.Match(url, @"https?://(?:www\.)?weebcentral\.com/series/(?<uniqueId>[^/]+)/(?<coreSlug>[^/]+)");
+        Match urlMatch = Regex.Match(absoluteUrl, @"https?://(?:www\.)?weebcentral\.com/series/(?<uniqueId>[^/?#]+)(?:/(?<coreSlug>[^/?#]+))?");
         if (!urlMatch.Success)
             return null;
 
         string coreSlug = urlMatch.Groups["uniqueId"].Value;
-        string storedUrl = $"https://weebcentral.com/series/{coreSlug}";  // Stable wildcard
+        string storedUrl = $"{BaseUrl}/series/{coreSlug}";  // Stable wildcard
 
         // Fetch once using full url (no double fetch)
-        HttpResponseMessage response = downloadClient.MakeRequest(url, RequestType.MangaInfo).GetAwaiter().GetResult();
+        HttpResponseMessage response = downloadClient.MakeRequest(absoluteUrl, RequestType.MangaInfo).GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
         {
             Log.Error("Failed to retrieve manga page");
@@ -102,7 +106,7 @@ public class WeebCentral : MangaConnector
 
     public override (Manga, MangaConnectorId<Manga>)? GetMangaFromId(string mangaIdOnSite)
     {
-        string url = $"https://weebcentral.com/series/{mangaIdOnSite}";
+        string url = $"{BaseUrl}/series/{mangaIdOnSite}";
         HttpResponseMessage response = downloadClient.MakeRequest(url, RequestType.MangaInfo).GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
         {
@@ -139,7 +143,7 @@ public class WeebCentral : MangaConnector
         string description = HtmlEntity.DeEntitize(descNode?.InnerText ?? "").Trim();
 
         // Tags
-        HtmlNodeCollection? genreNodes = doc.DocumentNode.SelectNodes("//strong[starts-with(text(),'Tag')]/../span");
+        HtmlNodeCollection? genreNodes = doc.DocumentNode.SelectNodes("//strong[starts-with(normalize-space(.),'Tag')]/parent::li/span/a");
         List<MangaTag> tags = genreNodes?.Select(b => new MangaTag(HtmlEntity.DeEntitize(b.InnerText.Trim()))).ToList() ?? [];
 
         // Status
@@ -155,17 +159,17 @@ public class WeebCentral : MangaConnector
         };
 
         // Authors
-        HtmlNodeCollection? authorNodes = doc.DocumentNode.SelectNodes("//strong[starts-with(text(),'Author')]/../span");
+        HtmlNodeCollection? authorNodes = doc.DocumentNode.SelectNodes("//strong[starts-with(normalize-space(.),'Author')]/parent::li/span/a");
         List<Author> authors = authorNodes?.Select(a => new Author(HtmlEntity.DeEntitize(a.InnerText.Trim()))).ToList() ?? [];
 
         // Year
-        HtmlNode? firstChapterNode = doc.DocumentNode.SelectSingleNode("//strong[starts-with(text(),'Released: ')]/../span");
+        HtmlNode? firstChapterNode = doc.DocumentNode.SelectSingleNode("//strong[starts-with(normalize-space(.),'Released:')]/following-sibling::span[1]");
         uint? year = null;
-        if (firstChapterNode?.InnerText is { } firstText && firstText.Contains(" "))
+        if (firstChapterNode?.InnerText is { } firstText)
         {
-            string datePart = firstText.Split(' ').Last();
-            uint.TryParse(datePart, out uint parsedYear);
-            year = parsedYear > 0 ? parsedYear : null;
+            Match yearMatch = Regex.Match(firstText, @"\b(?<year>\d{4})\b");
+            if (yearMatch.Success && uint.TryParse(yearMatch.Groups["year"].Value, out uint parsedYear))
+                year = parsedYear;
         }
 
         List<AltTitle> altTitles = new();
@@ -188,7 +192,7 @@ public class WeebCentral : MangaConnector
         if (baseSlug.Contains("series/"))
             baseSlug = baseSlug.Substring(baseSlug.IndexOf("series/") + 7);
 
-        string websiteUrl = $"https://weebcentral.com/series/{baseSlug}/full-chapter-list";
+        string websiteUrl = $"{BaseUrl}/series/{baseSlug}/full-chapter-list";
 
         HttpResponseMessage response = downloadClient.MakeRequest(websiteUrl, RequestType.Default).GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
@@ -211,7 +215,14 @@ public class WeebCentral : MangaConnector
         foreach (HtmlNode node in chapterNodes)
         {
             string href = node.GetAttributeValue("href", "").Trim();
-			string text = node.SelectSingleNode(".//span[@class='']").InnerText.Trim();
+            HtmlNode? chapterLabel = node.SelectSingleNode(".//span[normalize-space(@class)='']");
+            string text = HtmlEntity.DeEntitize(chapterLabel?.InnerText ?? node.InnerText).Trim();
+
+            if (!TryGetAbsoluteUrl(href, out string absoluteChapterUrl))
+            {
+                Log.WarnFormat("Ignoring invalid chapter URL: {0}", href);
+                continue;
+            }
 
 			// Get volume/season number - if applicable
 			int? volumeNumber = null;
@@ -249,8 +260,8 @@ public class WeebCentral : MangaConnector
             string? title = null;
 
             Chapter ch = new(manga.Obj, chapterNumber, volumeNumber, title);
-			string chapterIdOnSite = new Uri(href).Segments.Last();
-			string canonicalChapterUrl = $"https://weebcentral.com/chapters/{chapterIdOnSite}";
+            string chapterIdOnSite = new Uri(absoluteChapterUrl).Segments.Last().Trim('/');
+			string canonicalChapterUrl = $"{BaseUrl}/chapters/{chapterIdOnSite}";
             MangaConnectorId<Chapter> mcId = new(ch, this, chapterIdOnSite, canonicalChapterUrl);
             ch.MangaConnectorIds.Add(mcId);
             chapters.Add((ch, mcId));
@@ -281,13 +292,13 @@ public class WeebCentral : MangaConnector
 
 	private async Task<string[]> GetChapterImageUrlsAsync(MangaConnectorId<Chapter> chapterId, string? referrer)
 	{
-		await using ChromiumDownloadClient chromium = new ChromiumDownloadClient();
-		
-		HttpResponseMessage response = await chromium.MakeRequest(chapterId.WebsiteUrl!, RequestType.Default, referrer);
+        string imageFragmentUrl = $"{chapterId.WebsiteUrl!.TrimEnd('/')}/images?is_prev=False&reading_style=long_strip&current_page=1";
+		HttpResponseMessage response = await downloadClient.MakeRequest(imageFragmentUrl, RequestType.Default,
+            referrer ?? chapterId.WebsiteUrl);
 
 		if ((int)response.StatusCode < 200 || (int)response.StatusCode >= 300)
 		{
-			Log.Error("Failed to load chapter page with Chromium");
+			Log.Error("Failed to load chapter image fragment");
 			return [];
 		}
 
@@ -318,4 +329,17 @@ public class WeebCentral : MangaConnector
 		Log.InfoFormat("Found {0} images for chapter {1}", imageUrls.Length, chapterId.Obj);
 		return imageUrls;
 	}
+
+    private static bool TryGetAbsoluteUrl(string url, out string absoluteUrl)
+    {
+        if (Uri.TryCreate(new Uri(BaseUrl), url, out Uri? uri) &&
+            uri.Host.Equals("weebcentral.com", StringComparison.OrdinalIgnoreCase))
+        {
+            absoluteUrl = uri.AbsoluteUri;
+            return true;
+        }
+
+        absoluteUrl = string.Empty;
+        return false;
+    }
 }
