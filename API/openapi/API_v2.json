@@ -3989,7 +3989,7 @@
           "apiKey": {
             "minLength": 1,
             "type": "string",
-            "description": "The ApiKey to authenticate to the Library instance"
+            "description": "The Kavita Auth Key used to authenticate to the Library instance"
           }
         },
         "additionalProperties": false

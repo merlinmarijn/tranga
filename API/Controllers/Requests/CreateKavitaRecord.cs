@@ -16,9 +16,9 @@ public sealed record CreateKavitaRecord
     public required string Url { get; init; }
     
     /// <summary>
-    /// The ApiKey to authenticate to the Library instance
+    /// The Kavita Auth Key used to authenticate to the Library instance
     /// </summary>
     [Required]
-    [Description("The ApiKey to authenticate to the Library instance")]
+    [Description("A Kavita Auth Key created under Settings > Auth Keys / OPDS")]
     public required string ApiKey { get; init; }
 }

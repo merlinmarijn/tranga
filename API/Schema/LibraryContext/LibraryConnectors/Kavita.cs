@@ -1,63 +1,33 @@
-﻿using System.Net.Http.Headers;
-using API.Exceptions;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace API.Schema.LibraryContext.LibraryConnectors;
 
-public class Kavita(string baseUrl, string auth) : LibraryConnector(LibraryType.Kavita, baseUrl, auth)
+public class Kavita : LibraryConnector
 {
-    private readonly HttpClient _netClient = new HttpClient()
-    {
-        DefaultRequestHeaders =
-        {
-            Accept = { new MediaTypeWithQualityHeaderValue("application/json") }
-        }
-    };
-    
-    /// <summary>
-    /// Get a new JWT Token
-    /// </summary>
-    /// <returns></returns>
-    /// <exception cref="ParsingException"></exception>
-    private async Task<string> GetToken()
-    {
-        Log.Debug("Getting Token...");
-        string apiKey = $"apiKey={Auth}";
-        string pluginName = "pluginName=Tranga";
-        string path = $"/api/Plugin/authenticate?{apiKey}&{pluginName}";
+    private readonly HttpClient _httpClient;
 
-        if (await _netClient.PostAsync(BuildUri(path), null) is not { IsSuccessStatusCode: true } responseMessage)
-        {
-            throw new ParsingException("Could not connect to the Library instance");
-        }
-        
-        if(JObject.Parse(await responseMessage.Content.ReadAsStringAsync()) is not { } data)
-        {
-            throw new ParsingException("Could not parse the response");
-        }
-
-        return data.TryGetValue("token", out JToken? token) ? token.Value<string>()! : throw new ParsingException("Could not parse the response");
+    public Kavita(string baseUrl, string auth) : this(baseUrl, auth, new HttpClientHandler())
+    {
     }
 
-    /// <summary>
-    /// Refreshes the JWT Token
-    /// </summary>
-    private async Task RefreshAuth()
+    internal Kavita(string baseUrl, string auth, HttpMessageHandler handler)
+        : base(LibraryType.Kavita, baseUrl, auth)
     {
-        Log.Debug("Refreshing auth...");
-        string token = await GetToken();
-        _netClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        _httpClient = new HttpClient(handler);
+        _httpClient.DefaultRequestHeaders.Add("x-api-key", auth);
     }
 
     public override async Task UpdateLibrary(CancellationToken ct)
     {
         Log.Debug("Updating Libraries...");
         List<int> ids = await GetLibraries(ct);
-        JObject requestData = new () { { "ids", JsonConvert.SerializeObject(ids) } };
 
-        await RefreshAuth();
-        await _netClient.PostAsJsonAsync(BuildUri("/api/Library/scan-multiple"), requestData, ct);
+        if (await _httpClient.PostAsJsonAsync(BuildUri("/api/Library/scan-multiple"), new { ids }, ct)
+            is { IsSuccessStatusCode: false } response)
+        {
+            Log.ErrorFormat("Unable to update Kavita libraries: {0} {2} {1}", response.StatusCode,
+                await response.Content.ReadAsStringAsync(ct), response.RequestMessage?.RequestUri);
+        }
     }
 
     /// <summary>
@@ -67,24 +37,29 @@ public class Kavita(string baseUrl, string auth) : LibraryConnector(LibraryType.
     private async Task<List<int>> GetLibraries(CancellationToken ct)
     {
         Log.Debug("Getting Libraries...");
-        await RefreshAuth();
-        if(await _netClient.GetStringAsync(BuildUri("/api/Library/libraries"), ct) is not { } responseData)
+        HttpResponseMessage response = await _httpClient.GetAsync(BuildUri("/api/Library/libraries"), ct);
+        if (!response.IsSuccessStatusCode)
         {
-            Log.Error("Unable to fetch libraries");
+            Log.ErrorFormat("Unable to fetch Kavita libraries: {0} {2} {1}", response.StatusCode,
+                await response.Content.ReadAsStringAsync(ct), response.RequestMessage?.RequestUri);
             return [];
         }
 
+        string responseData = await response.Content.ReadAsStringAsync(ct);
         JArray librariesJson = JArray.Parse(responseData);
-        return librariesJson.SelectTokens("id").Values<int>().ToList();
+        return librariesJson.Children<JObject>()
+            .Select(library => library.Value<int>("id"))
+            .ToList();
     }
 
     internal override async Task<bool> Test(CancellationToken ct)
     {
         Log.Debug("Testing...");
-        await RefreshAuth();
-        if(await _netClient.GetAsync(BuildUri("/api/Account"), ct) is not { IsSuccessStatusCode: true })
+        HttpResponseMessage response = await _httpClient.GetAsync(BuildUri("/api/Account"), ct);
+        if (!response.IsSuccessStatusCode)
         {
-            Log.Error("Unable to fetch account");
+            Log.ErrorFormat("Unable to fetch Kavita account: {0} {2} {1}", response.StatusCode,
+                await response.Content.ReadAsStringAsync(ct), response.RequestMessage?.RequestUri);
             return false;
         }
 

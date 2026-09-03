@@ -71,7 +71,7 @@ public class LibraryConnectorController(LibraryContext context) : ControllerBase
         if (!await entityEntry.Entity.Test(HttpContext.RequestAborted))
             return TypedResults.Unauthorized();
 
-        if(await context.Sync(HttpContext.RequestAborted, GetType(), "Adding Komga Connector") is { success: false } result)
+        if(await context.Sync(HttpContext.RequestAborted, GetType(), "Adding Kavita Connector") is { success: false } result)
             return TypedResults.InternalServerError(result.exceptionMessage);
         return TypedResults.Created(string.Empty, entityEntry.Entity.Key);
     }
