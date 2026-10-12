@@ -623,6 +623,114 @@
         }
       }
     },
+    "/v2/Chapters/{ChapterId}/File": {
+      "delete": {
+        "tags": [
+          "Chapters"
+        ],
+        "summary": "Deletes the downloaded archive of API.Controllers.DTOs.Chapter with ChapterId and stops it from being downloaded again",
+        "parameters": [
+          {
+            "name": "ChapterId",
+            "in": "path",
+            "description": "API.Controllers.DTOs.Chapter.Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "404": {
+            "description": "API.Controllers.DTOs.Chapter with ChapterId not found",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error during Database or File Operation",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/Chapters/{ChapterId}/Redownload": {
+      "post": {
+        "tags": [
+          "Chapters"
+        ],
+        "summary": "Deletes the downloaded archive of API.Controllers.DTOs.Chapter with ChapterId (if any) and queues a new download",
+        "parameters": [
+          {
+            "name": "ChapterId",
+            "in": "path",
+            "description": "API.Controllers.DTOs.Chapter.Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "404": {
+            "description": "API.Controllers.DTOs.Chapter with ChapterId not found",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error during Database or File Operation",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "API.Controllers.DTOs.Chapter is not linked to any API.MangaConnectors.MangaConnector",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json; x-version=2.0": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json; x-version=2.0": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/FileLibrary": {
       "get": {
         "tags": [

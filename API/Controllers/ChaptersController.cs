@@ -263,4 +263,81 @@ public class ChaptersController(MangaContext context) : ControllerBase
         
         return TypedResults.Ok();
     }
+
+    /// <summary>
+    /// Deletes the downloaded archive of <see cref="Chapter"/> with <paramref name="ChapterId"/> and stops it from being downloaded again
+    /// </summary>
+    /// <param name="ChapterId"><see cref="Chapter"/>.Key</param>
+    /// <response code="200"></response>
+    /// <response code="404"><see cref="Chapter"/> with <paramref name="ChapterId"/> not found</response>
+    /// <response code="500">Error during Database or File Operation</response>
+    [HttpDelete("{ChapterId}/File")]
+    [ProducesResponseType(Status200OK)]
+    [ProducesResponseType<string>(Status404NotFound, "text/plain")]
+    [ProducesResponseType<string>(Status500InternalServerError, "text/plain")]
+    public async Task<Results<Ok, NotFound<string>, InternalServerError<string>>> DeleteChapterFile(string ChapterId)
+    {
+        if (await LoadChapterWithFile(ChapterId) is not { } chapter)
+            return TypedResults.NotFound(nameof(ChapterId));
+        if (TryDeleteArchive(chapter) is { } error)
+            return TypedResults.InternalServerError(error);
+        // Otherwise the periodic download worker would immediately fetch it again
+        foreach (Schema.MangaContext.MangaConnectorId<Schema.MangaContext.Chapter> id in chapter.MangaConnectorIds)
+            id.UseForDownload = false;
+        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+            return TypedResults.InternalServerError(result.exceptionMessage);
+        return TypedResults.Ok();
+    }
+
+    /// <summary>
+    /// Deletes the downloaded archive of <see cref="Chapter"/> with <paramref name="ChapterId"/> (if any) and queues a new download
+    /// </summary>
+    /// <param name="ChapterId"><see cref="Chapter"/>.Key</param>
+    /// <response code="200"></response>
+    /// <response code="404"><see cref="Chapter"/> with <paramref name="ChapterId"/> not found</response>
+    /// <response code="428"><see cref="Chapter"/> is not linked to any <see cref="API.MangaConnectors.MangaConnector"/></response>
+    /// <response code="500">Error during Database or File Operation</response>
+    [HttpPost("{ChapterId}/Redownload")]
+    [ProducesResponseType(Status200OK)]
+    [ProducesResponseType<string>(Status404NotFound, "text/plain")]
+    [ProducesResponseType(Status428PreconditionRequired)]
+    [ProducesResponseType<string>(Status500InternalServerError, "text/plain")]
+    public async Task<Results<Ok, NotFound<string>, StatusCodeHttpResult, InternalServerError<string>>> RedownloadChapter(string ChapterId)
+    {
+        if (await LoadChapterWithFile(ChapterId) is not { } chapter)
+            return TypedResults.NotFound(nameof(ChapterId));
+        // Prefer a connector already selected for download
+        if (chapter.MangaConnectorIds.OrderByDescending(id => id.UseForDownload).FirstOrDefault() is not { } chId)
+            return TypedResults.StatusCode(Status428PreconditionRequired);
+        if (TryDeleteArchive(chapter) is { } error)
+            return TypedResults.InternalServerError(error);
+        chId.UseForDownload = true;
+        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+            return TypedResults.InternalServerError(result.exceptionMessage);
+        Tranga.AddWorker(new DownloadChapterFromMangaconnectorWorker(chId));
+        return TypedResults.Ok();
+    }
+
+    private Task<Schema.MangaContext.Chapter?> LoadChapterWithFile(string chapterId) => context.Chapters
+        .Include(ch => ch.MangaConnectorIds)
+        .Include(ch => ch.ParentManga)
+        .ThenInclude(m => m.Library)
+        .FirstOrDefaultAsync(ch => ch.Key == chapterId, HttpContext.RequestAborted);
+
+    /// <returns>Error message, or null on success</returns>
+    private static string? TryDeleteArchive(Schema.MangaContext.Chapter chapter)
+    {
+        try
+        {
+            if (chapter.Downloaded && chapter.FullArchiveFilePath is { } path && System.IO.File.Exists(path))
+                System.IO.File.Delete(path);
+        }
+        catch (Exception e)
+        {
+            return e.Message;
+        }
+        chapter.Downloaded = false;
+        chapter.FileName = null;
+        return null;
+    }
 }
