@@ -318,6 +318,111 @@ public class ChaptersController(MangaContext context) : ControllerBase
         return TypedResults.Ok();
     }
 
+    /// <summary>
+    /// Re-checks the disk for every <see cref="Chapter"/> of <see cref="Schema.MangaContext.Manga"/> with <paramref name="MangaId"/>, fixing stale downloaded states (e.g. after files were removed manually)
+    /// </summary>
+    /// <param name="MangaId"><see cref="Schema.MangaContext.Manga"/>.Key</param>
+    /// <response code="200">Number of chapters whose downloaded state changed</response>
+    /// <response code="404"><see cref="Schema.MangaContext.Manga"/> with <paramref name="MangaId"/> not found</response>
+    /// <response code="500">Error during Database Operation</response>
+    [HttpPost("Manga/{MangaId}/VerifyFiles")]
+    [ProducesResponseType<int>(Status200OK, "application/json")]
+    [ProducesResponseType<string>(Status404NotFound, "text/plain")]
+    [ProducesResponseType<string>(Status500InternalServerError, "text/plain")]
+    public async Task<Results<Ok<int>, NotFound<string>, InternalServerError<string>>> VerifyMangaFiles(string MangaId)
+    {
+        if (await LoadMangaChaptersWithFiles(MangaId) is not { } chapters)
+            return TypedResults.NotFound(nameof(MangaId));
+        int changed = chapters.Count(ch => ch.Downloaded != ch.CheckDownloadedOnDisk());
+        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+            return TypedResults.InternalServerError(result.exceptionMessage);
+        return TypedResults.Ok(changed);
+    }
+
+    /// <summary>
+    /// Deletes the downloaded archives of all <see cref="Chapter"/> of <see cref="Schema.MangaContext.Manga"/> with <paramref name="MangaId"/> and stops them from being downloaded again
+    /// </summary>
+    /// <param name="MangaId"><see cref="Schema.MangaContext.Manga"/>.Key</param>
+    /// <response code="200">Number of chapters affected</response>
+    /// <response code="404"><see cref="Schema.MangaContext.Manga"/> with <paramref name="MangaId"/> not found</response>
+    /// <response code="500">Error during Database or File Operation</response>
+    [HttpDelete("Manga/{MangaId}/Files")]
+    [ProducesResponseType<int>(Status200OK, "application/json")]
+    [ProducesResponseType<string>(Status404NotFound, "text/plain")]
+    [ProducesResponseType<string>(Status500InternalServerError, "text/plain")]
+    public async Task<Results<Ok<int>, NotFound<string>, InternalServerError<string>>> DeleteMangaFiles(string MangaId)
+    {
+        if (await LoadMangaChaptersWithFiles(MangaId) is not { } chapters)
+            return TypedResults.NotFound(nameof(MangaId));
+        // Chapters that failed to delete stay downloaded and are reported after the successful ones are saved
+        List<string> errors = [];
+        foreach (Schema.MangaContext.Chapter chapter in chapters)
+        {
+            if (TryDeleteArchive(chapter) is { } error)
+            {
+                errors.Add(error);
+                continue;
+            }
+            foreach (Schema.MangaContext.MangaConnectorId<Schema.MangaContext.Chapter> id in chapter.MangaConnectorIds)
+                id.UseForDownload = false;
+        }
+        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+            return TypedResults.InternalServerError(result.exceptionMessage);
+        if (errors.Count > 0)
+            return TypedResults.InternalServerError(string.Join(Environment.NewLine, errors.Distinct()));
+        return TypedResults.Ok(chapters.Count);
+    }
+
+    /// <summary>
+    /// Deletes the downloaded archives of all <see cref="Chapter"/> of <see cref="Schema.MangaContext.Manga"/> with <paramref name="MangaId"/> (if any) and queues every chapter for download again
+    /// </summary>
+    /// <remarks>Downloads are started by the periodic download worker, respecting the concurrent download limit.</remarks>
+    /// <param name="MangaId"><see cref="Schema.MangaContext.Manga"/>.Key</param>
+    /// <response code="200">Number of chapters queued</response>
+    /// <response code="404"><see cref="Schema.MangaContext.Manga"/> with <paramref name="MangaId"/> not found</response>
+    /// <response code="500">Error during Database or File Operation</response>
+    [HttpPost("Manga/{MangaId}/Redownload")]
+    [ProducesResponseType<int>(Status200OK, "application/json")]
+    [ProducesResponseType<string>(Status404NotFound, "text/plain")]
+    [ProducesResponseType<string>(Status500InternalServerError, "text/plain")]
+    public async Task<Results<Ok<int>, NotFound<string>, InternalServerError<string>>> RedownloadMangaChapters(string MangaId)
+    {
+        if (await LoadMangaChaptersWithFiles(MangaId) is not { } chapters)
+            return TypedResults.NotFound(nameof(MangaId));
+        List<string> errors = [];
+        int queued = 0;
+        foreach (Schema.MangaContext.Chapter chapter in chapters)
+        {
+            // Same connector preference as single-chapter redownload; unlinked chapters cannot be downloaded
+            if (chapter.MangaConnectorIds.OrderByDescending(id => id.UseForDownload).FirstOrDefault() is not { } chId)
+                continue;
+            if (TryDeleteArchive(chapter) is { } error)
+            {
+                errors.Add(error);
+                continue;
+            }
+            chId.UseForDownload = true;
+            queued++;
+        }
+        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+            return TypedResults.InternalServerError(result.exceptionMessage);
+        if (errors.Count > 0)
+            return TypedResults.InternalServerError(string.Join(Environment.NewLine, errors.Distinct()));
+        return TypedResults.Ok(queued);
+    }
+
+    private async Task<List<Schema.MangaContext.Chapter>?> LoadMangaChaptersWithFiles(string mangaId)
+    {
+        if (!await context.Mangas.AnyAsync(m => m.Key == mangaId, HttpContext.RequestAborted))
+            return null;
+        return await context.Chapters
+            .Include(ch => ch.MangaConnectorIds)
+            .Include(ch => ch.ParentManga)
+            .ThenInclude(m => m.Library)
+            .Where(ch => ch.ParentMangaId == mangaId)
+            .ToListAsync(HttpContext.RequestAborted);
+    }
+
     private Task<Schema.MangaContext.Chapter?> LoadChapterWithFile(string chapterId) => context.Chapters
         .Include(ch => ch.MangaConnectorIds)
         .Include(ch => ch.ParentManga)

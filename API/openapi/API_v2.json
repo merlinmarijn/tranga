@@ -731,6 +731,163 @@
         }
       }
     },
+    "/v2/Chapters/Manga/{MangaId}/VerifyFiles": {
+      "post": {
+        "tags": [
+          "Chapters"
+        ],
+        "summary": "Re-checks the disk for every API.Controllers.DTOs.Chapter of API.Schema.MangaContext.Manga with MangaId, fixing stale downloaded states (e.g. after files were removed manually)",
+        "parameters": [
+          {
+            "name": "MangaId",
+            "in": "path",
+            "description": "API.Schema.MangaContext.Manga.Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Number of chapters whose downloaded state changed",
+            "content": {
+              "application/json; x-version=2.0": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API.Schema.MangaContext.Manga with MangaId not found",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error during Database Operation",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/Chapters/Manga/{MangaId}/Files": {
+      "delete": {
+        "tags": [
+          "Chapters"
+        ],
+        "summary": "Deletes the downloaded archives of all API.Controllers.DTOs.Chapter of API.Schema.MangaContext.Manga with MangaId and stops them from being downloaded again",
+        "parameters": [
+          {
+            "name": "MangaId",
+            "in": "path",
+            "description": "API.Schema.MangaContext.Manga.Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Number of chapters affected",
+            "content": {
+              "application/json; x-version=2.0": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API.Schema.MangaContext.Manga with MangaId not found",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error during Database or File Operation",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/Chapters/Manga/{MangaId}/Redownload": {
+      "post": {
+        "tags": [
+          "Chapters"
+        ],
+        "summary": "Deletes the downloaded archives of all API.Controllers.DTOs.Chapter of API.Schema.MangaContext.Manga with MangaId (if any) and queues every chapter for download again",
+        "description": "Downloads are started by the periodic download worker, respecting the concurrent download limit.",
+        "parameters": [
+          {
+            "name": "MangaId",
+            "in": "path",
+            "description": "API.Schema.MangaContext.Manga.Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Number of chapters queued",
+            "content": {
+              "application/json; x-version=2.0": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API.Schema.MangaContext.Manga with MangaId not found",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error during Database or File Operation",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/FileLibrary": {
       "get": {
         "tags": [
