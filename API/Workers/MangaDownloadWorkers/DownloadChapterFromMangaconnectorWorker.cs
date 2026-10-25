@@ -55,46 +55,58 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
             return [];
         }
         
-        if (!Tranga.TryGetMangaConnector(mangaConnectorId.MangaConnectorName, out MangaConnector? mangaConnector))
+        Chapter chapter = mangaConnectorId.Obj;
+        try
         {
-            Log.Error("Could not get MangaConnector.");
-            return [];
+            return await DownloadChapter(mangaConnectorId, chapter);
         }
+        catch (Exception exception)
+        {
+            Log.Error(exception);
+            string reason = CancellationToken.IsCancellationRequested
+                ? "download was cancelled or timed out"
+                : $"unexpected {exception.GetType().Name}: {exception.Message}";
+            return await RecordFailure(chapter, reason);
+        }
+    }
+
+    private async Task<BaseWorker[]> DownloadChapter(MangaConnectorId<Chapter> mangaConnectorId, Chapter chapter)
+    {
+        if (!Tranga.TryGetMangaConnector(mangaConnectorId.MangaConnectorName, out MangaConnector? mangaConnector))
+            return await RecordFailure(chapter, $"connector {mangaConnectorId.MangaConnectorName} is not available");
         
         Log.Debug($"Downloading chapter for MangaConnectorId {mangaConnectorId}...");
         
-        Chapter chapter = mangaConnectorId.Obj;
         if (chapter.ParentManga.LibraryId is null)
-        {
-            Log.Info($"Library is not set for {chapter.ParentManga} {chapter}");
-            return [];
-        }
+            return await RecordFailure(chapter, "series has no file library set");
         
         Log.Info($"Getting chapter payload for {chapter}");
-        ChapterDownloadPayload payload = mangaConnector.GetChapterPayload(mangaConnectorId);
+        ChapterDownloadPayload payload;
+        try
+        {
+            payload = mangaConnector.GetChapterPayload(mangaConnectorId);
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception);
+            return await RecordFailure(chapter, $"unable to get chapter pages from {mangaConnector.Name} ({exception.GetType().Name}: {exception.Message})");
+        }
 
         if (chapter.FullArchiveFilePath is not { } saveArchiveFilePath)
-        {
-            Log.Error("Failed getting saveArchiveFilePath");
-            return [];
-        }
+            return await RecordFailure(chapter, "unable to determine archive file path");
         Log.Debug($"Chapter path: {saveArchiveFilePath}");
         
         //Check if Publication Directory already exists
         string? directoryPath = Path.GetDirectoryName(saveArchiveFilePath);
         if (directoryPath is null)
-        {
-            Log.Error($"Directory path could not be found: {saveArchiveFilePath}");
-            this.Fail();
-            return [];
-        }
+            return await RecordFailure(chapter, $"directory path could not be found for {saveArchiveFilePath}");
         if (!Directory.Exists(directoryPath))
         {
             Log.Info($"Creating publication Directory: {directoryPath}");
             Directory.CreateDirectory(directoryPath);
         }
 
-        bool exported = await ChapterExporter.Export(payload, mangaConnector, chapter, saveArchiveFilePath,
+        string? exportError = await ChapterExporter.Export(payload, mangaConnector, chapter, saveArchiveFilePath,
             mangaConnectorId.WebsiteUrl, async () =>
             {
                 await CopyCoverFromCacheToDownloadLocation(chapter.ParentManga);
@@ -102,13 +114,13 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
                 foreach (CollectionEntry collectionEntry in MangaContext.Entry(chapter.ParentManga).Collections)
                     await collectionEntry.LoadAsync(CancellationToken);
             }, CancellationToken);
-        if (!exported)
-            return [];
+        if (exportError is not null)
+            return await RecordFailure(chapter, exportError);
 
         chapter.Downloaded = true;
         chapter.FileName = new FileInfo(saveArchiveFilePath).Name;
         if(await MangaContext.Sync(CancellationToken, GetType(), "Downloading complete") is { success: false } chapterContextException)
-            Log.Error($"Failed to save database changes: {chapterContextException.exceptionMessage}");
+            return await RecordFailure(chapter, $"archive saved but database update failed: {chapterContextException.exceptionMessage}");
 
         if (chapter.ParentManga.ContentKind == ContentKind.Novel)
         {
@@ -139,6 +151,25 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
             Log.Info($"Condition {Tranga.Settings.LibraryRefreshSetting} met.");
 
         return refreshLibrary? [new RefreshLibrariesWorker()] : [];
+    }
+
+    /// <summary>
+    /// Logs the final result of a failed download as a single action record and notification.
+    /// </summary>
+    private async Task<BaseWorker[]> RecordFailure(Chapter chapter, string reason)
+    {
+        Log.Error($"Failed to download {chapter.ParentManga} {chapter}: {reason}");
+        // ponytail: CancellationToken.None so timeouts are still recorded after the worker token fired.
+        await ActionsContext.Actions.AddAsync(new ChapterDownloadFailedActionRecord(chapter.ParentManga, chapter, reason[..Math.Min(reason.Length, 2048)]), CancellationToken.None);
+        if (await ActionsContext.Sync(CancellationToken.None, GetType(), "Download failed") is { success: false } actionsContextException)
+            Log.Error($"Failed to save database changes: {actionsContextException.exceptionMessage}");
+        await NotificationsContext.Notifications.AddAsync(new Notification(
+            "Chapter download failed",
+            $"{chapter.ParentManga.Name} Ch. {chapter.ChapterNumber}: {reason}",
+            NotificationUrgency.High), CancellationToken.None);
+        if (await NotificationsContext.Sync(CancellationToken.None, GetType(), "Download failed") is { success: false } notificationsContextException)
+            Log.Error($"Failed to save database changes: {notificationsContextException.exceptionMessage}");
+        return [];
     }
 
     private async Task<bool> CheckLibraryRefresh() => Tranga.Settings.LibraryRefreshSetting switch

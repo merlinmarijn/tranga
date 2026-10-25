@@ -3911,6 +3911,11 @@
             "description": "API.Schema.MangaContext.MetadataFetchers.MetadataFetcher if Record is API.Schema.ActionsContext.Actions.MetadataUpdatedActionRecord",
             "nullable": true
           },
+          "reason": {
+            "type": "string",
+            "description": "Failure reason if Record is API.Schema.ActionsContext.Actions.ChapterDownloadFailedActionRecord",
+            "nullable": true
+          },
           "key": {
             "maxLength": 64,
             "minLength": 16,
@@ -3962,7 +3967,8 @@
           "CoverDownloaded",
           "DataMoved",
           "LibraryMoved",
-          "MetadataUpdated"
+          "MetadataUpdated",
+          "ChapterDownloadFailed"
         ],
         "type": "string"
       },

@@ -25,7 +25,7 @@ public class WeebCentralLiveTest
         Assert.All(imageUrls, url => Assert.StartsWith("http", url));
 
         using Stream? firstPage = connector.DownloadImage(imageUrls[0], CancellationToken.None,
-            chapters[^1].Item2.WebsiteUrl).GetAwaiter().GetResult();
+            chapters[^1].Item2.WebsiteUrl).GetAwaiter().GetResult().stream;
         Assert.NotNull(firstPage);
         Assert.NotEqual(-1, firstPage.ReadByte());
     }

@@ -1,3 +1,4 @@
+using System.Net;
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.RegularExpressions;
@@ -93,9 +94,9 @@ public abstract class MangaConnector(string name, string[] supportedLanguages, s
         return filename.CleanNameForWindows();
     }
     
-    public async Task<Stream?> DownloadImage(string imageUrl, CancellationToken ct, string? referrer = null)
+    public async Task<(Stream? stream, HttpStatusCode status)> DownloadImage(string imageUrl, CancellationToken ct, string? referrer = null)
     {
         HttpResponseMessage requestResult = await downloadClient.MakeRequest(imageUrl, RequestType.MangaImage, referrer, ct);
-        return requestResult.IsSuccessStatusCode ? await requestResult.Content.ReadAsStreamAsync(ct) : null;
+        return (requestResult.IsSuccessStatusCode ? await requestResult.Content.ReadAsStreamAsync(ct) : null, requestResult.StatusCode);
     }
 }

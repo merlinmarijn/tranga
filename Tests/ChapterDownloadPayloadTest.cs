@@ -34,7 +34,7 @@ public class ChapterDownloadPayloadTest
             Manga manga = new("Test", "", "", MangaReleaseStatus.Unreleased, [], [], [], []);
             Chapter chapter = new(manga, "1", null);
 
-            Assert.True(await ChapterExporter.Export(new ImagePagesPayload(["https://example.test/1.png"]),
+            Assert.Null(await ChapterExporter.Export(new ImagePagesPayload(["https://example.test/1.png"]),
                 new ImageConnector(), chapter, path, null, () => Task.CompletedTask, CancellationToken.None));
 
             using ZipArchive archive = ZipFile.OpenRead(path);
@@ -58,7 +58,7 @@ public class ChapterDownloadPayloadTest
                 originalLanguage: "en", contentKind: ContentKind.Novel);
             Chapter chapter = new(manga, "2", null, "Chapter title");
 
-            Assert.True(await ChapterExporter.Export(new ChapterHtmlPayload("<script>advertisement()</script><p>First paragraph.</p><p><strong>Formatted</strong> second paragraph.</p>"), new ImageConnector(), chapter,
+            Assert.Null(await ChapterExporter.Export(new ChapterHtmlPayload("<script>advertisement()</script><p>First paragraph.</p><p><strong>Formatted</strong> second paragraph.</p>"), new ImageConnector(), chapter,
                 path, null, () => Task.CompletedTask, CancellationToken.None));
 
             using ZipArchive archive = ZipFile.OpenRead(path);
@@ -110,7 +110,7 @@ public class ChapterDownloadPayloadTest
                          (first, "<p>First text</p>"), (twoHundred, "<p>Last text</p>"), (middle, "<p>Middle text</p>")
                      })
             {
-                Assert.True(await ChapterExporter.Export(new ChapterHtmlPayload(contents), new ImageConnector(), chapter,
+                Assert.Null(await ChapterExporter.Export(new ChapterHtmlPayload(contents), new ImageConnector(), chapter,
                     chapter.FullArchiveFilePath!, null, () => Task.CompletedTask, CancellationToken.None));
                 if (chapter == first)
                 {
@@ -135,6 +135,21 @@ public class ChapterDownloadPayloadTest
             if (Directory.Exists(libraryPath))
                 Directory.Delete(libraryPath, true);
         }
+    }
+
+    [Fact]
+    public async Task ImagePagesPayload_ReportsWhichImageFailed()
+    {
+        string path = Path.Join(Path.GetTempPath(), $"{Guid.NewGuid()}.cbz");
+        Manga manga = new("Test", "", "", MangaReleaseStatus.Unreleased, [], [], [], []);
+        Chapter chapter = new(manga, "1", null);
+
+        string? error = await ChapterExporter.Export(
+            new ImagePagesPayload(["https://example.test/1.png", "https://example.test/missing.png", "https://example.test/3.png"]),
+            new ImageConnector(), chapter, path, null, () => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Equal("unable to download image 2/3 (HTTP 404 NotFound): https://example.test/missing.png", error);
+        Assert.False(File.Exists(path));
     }
 
     private class ImageConnector : MangaConnector
@@ -163,10 +178,12 @@ public class ChapterDownloadPayloadTest
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7nQAAAABJRU5ErkJggg==");
 
         public Task<HttpResponseMessage> MakeRequest(string url, RequestType requestType, string? referrer = null,
-            CancellationToken? cancellationToken = null) => Task.FromResult(new HttpResponseMessage
-        {
-            StatusCode = System.Net.HttpStatusCode.OK,
-            Content = new ByteArrayContent(ImageBytes)
-        });
+            CancellationToken? cancellationToken = null) => Task.FromResult(url.Contains("missing")
+            ? new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)
+            : new HttpResponseMessage
+            {
+                StatusCode = System.Net.HttpStatusCode.OK,
+                Content = new ByteArrayContent(ImageBytes)
+            });
     }
 }

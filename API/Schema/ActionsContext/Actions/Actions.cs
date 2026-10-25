@@ -8,5 +8,6 @@ public enum Actions
     CoverDownloaded = 3,
     DataMoved = 4,
     LibraryMoved = 5,
-    MetadataUpdated = 6
+    MetadataUpdated = 6,
+    ChapterDownloadFailed = 7
 }

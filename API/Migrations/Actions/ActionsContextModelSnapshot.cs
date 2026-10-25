@@ -17,7 +17,7 @@ namespace API.Migrations.Actions
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.11")
+                .HasAnnotation("ProductVersion", "10.0.2")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -44,12 +44,37 @@ namespace API.Migrations.Actions
                     b.UseTphMappingStrategy();
                 });
 
+            modelBuilder.Entity("API.Schema.ActionsContext.Actions.ChapterDownloadFailedActionRecord", b =>
+                {
+                    b.HasBaseType("API.Schema.ActionsContext.ActionRecord");
+
+                    b.Property<string>("ChapterId")
+                        .IsRequired()
+                        .ValueGeneratedOnUpdateSometimes()
+                        .HasColumnType("text")
+                        .HasColumnName("ChapterId");
+
+                    b.Property<string>("MangaId")
+                        .IsRequired()
+                        .ValueGeneratedOnUpdateSometimes()
+                        .HasColumnType("text")
+                        .HasColumnName("MangaId");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.HasDiscriminator().HasValue(7);
+                });
+
             modelBuilder.Entity("API.Schema.ActionsContext.Actions.ChapterDownloadedActionRecord", b =>
                 {
                     b.HasBaseType("API.Schema.ActionsContext.ActionRecord");
 
                     b.Property<string>("ChapterId")
                         .IsRequired()
+                        .ValueGeneratedOnUpdateSometimes()
                         .HasColumnType("text")
                         .HasColumnName("ChapterId");
 

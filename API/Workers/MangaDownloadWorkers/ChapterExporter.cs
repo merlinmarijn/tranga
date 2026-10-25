@@ -1,3 +1,4 @@
+using System.Net;
 using System.IO.Compression;
 using System.Text;
 using System.Xml.Linq;
@@ -18,33 +19,38 @@ internal static class ChapterExporter
     // ponytail: serializes all series rebuilds; use per-series locks if concurrent series exports become a bottleneck.
     private static readonly SemaphoreSlim SeriesExportLock = new(1, 1);
 
-    internal static Task<bool> Export(ChapterDownloadPayload payload, MangaConnector connector, Chapter chapter,
+    /// <returns>null on success, otherwise a single-line reason why the export failed</returns>
+    internal static Task<string?> Export(ChapterDownloadPayload payload, MangaConnector connector, Chapter chapter,
         string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken) => payload switch
     {
         ImagePagesPayload pages => ExportManga(pages, connector, chapter, outputPath, referrer, beforeArchive, cancellationToken),
         ChapterHtmlPayload html => ExportNovel(html, chapter, outputPath, beforeArchive, cancellationToken),
-        _ => Task.FromResult(false)
+        _ => Task.FromResult<string?>($"unsupported payload type {payload.GetType().Name}")
     };
 
-    private static async Task<bool> ExportManga(ImagePagesPayload pages, MangaConnector connector, Chapter chapter,
+    private static async Task<string?> ExportManga(ImagePagesPayload pages, MangaConnector connector, Chapter chapter,
         string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken)
     {
         if (pages.Urls.Length < 1)
         {
             Log.Info($"No imageUrls for chapter {chapter}");
-            return false;
+            return "connector returned no image URLs";
         }
 
         Log.Info($"Downloading images: {chapter}");
         List<Stream> images = [];
-        foreach (string imageUrl in pages.Urls)
+        for (int index = 0; index < pages.Urls.Length; index++)
         {
+            string imageUrl = pages.Urls[index];
+            string imageLabel = $"image {index + 1}/{pages.Urls.Length}";
             try
             {
-                if (await connector.DownloadImage(imageUrl, cancellationToken, referrer) is not { } stream)
+                (Stream? stream, HttpStatusCode status) = await connector.DownloadImage(imageUrl, cancellationToken, referrer);
+                if (stream is null)
                 {
                     Log.Error($"Failed to download image: {imageUrl}");
-                    return false;
+                    images.ForEach(image => image.Dispose());
+                    return $"unable to download {imageLabel} (HTTP {(int)status} {status}): {imageUrl}";
                 }
                 images.Add(await ProcessImage(stream, cancellationToken));
             }
@@ -52,19 +58,19 @@ internal static class ChapterExporter
             {
                 Log.Error(exception);
                 images.ForEach(image => image.Dispose());
-                return false;
+                return $"unable to download {imageLabel} ({exception.GetType().Name}: {exception.Message}): {imageUrl}";
             }
-        }
-
-        await beforeArchive();
-        if (File.Exists(outputPath))
-        {
-            Log.Info($"Archive {outputPath} already existed, overwriting.");
-            File.Delete(outputPath);
         }
 
         try
         {
+            await beforeArchive();
+            if (File.Exists(outputPath))
+            {
+                Log.Info($"Archive {outputPath} already existed, overwriting.");
+                File.Delete(outputPath);
+            }
+
             Log.Debug($"Creating archive: {outputPath}");
             using ZipArchive archive = ZipFile.Open(outputPath, ZipArchiveMode.Create);
             if (Constants.CreateComicInfoXml)
@@ -87,18 +93,21 @@ internal static class ChapterExporter
         catch (Exception exception)
         {
             Log.Error(exception);
+            return $"unable to write archive {outputPath} ({exception.GetType().Name}: {exception.Message})";
         }
         finally
         {
             images.ForEach(image => image.Dispose());
         }
 
-        return true;
+        return null;
     }
 
-    private static async Task<bool> ExportNovel(ChapterHtmlPayload payload, Chapter chapter, string outputPath,
+    private static async Task<string?> ExportNovel(ChapterHtmlPayload payload, Chapter chapter, string outputPath,
         Func<Task> beforeArchive, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(payload.Html))
+            return "connector returned empty chapter text";
         await beforeArchive();
         if (File.Exists(outputPath))
             File.Delete(outputPath);
@@ -148,7 +157,7 @@ internal static class ChapterExporter
         await Write(archive, "OEBPS/content.opf", package.ToString(), CompressionLevel.Optimal, cancellationToken);
         await Write(archive, "OEBPS/chapter.xhtml", chapterDocument.ToString(), CompressionLevel.Optimal, cancellationToken);
         await Write(archive, "OEBPS/nav.xhtml", navigation.ToString(), CompressionLevel.Optimal, cancellationToken);
-        return true;
+        return null;
     }
 
     internal static async Task<bool> ExportNovelSeries(Manga manga, IEnumerable<Chapter> chapters,

@@ -48,7 +48,7 @@ internal class HttpDownloadClient : IDownloadClient
                       $"{response.Version}\n" +
                       $"Headers:\n\t{string.Join("\n\t", response.Headers.Select(h => $"{h.Key}: <{string.Join(">, <", h.Value)}"))}>\n" +
                       $"{response.Content.ReadAsStringAsync().Result}");
-            return new(HttpStatusCode.InternalServerError);
+            return new(response.StatusCode);
         }
         catch (HttpRequestException e)
         {

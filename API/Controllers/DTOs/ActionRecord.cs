@@ -22,6 +22,7 @@ public sealed record ActionRecord : Identifiable
         To = actionRecord is DataMovedActionRecord to ? to.To : null;
         Filename = actionRecord is CoverDownloadedActionRecord filename ? filename.Filename : null;
         MetadataFetcher = actionRecord is MetadataUpdatedActionRecord metadata ? metadata.MetadataFetcher : null;
+        Reason = actionRecord is ChapterDownloadFailedActionRecord failed ? failed.Reason : null;
         MangaTitle = mangaTitle;
         ChapterNumber = chapterNumber;
         ChapterTitle = chapterTitle;
@@ -92,4 +93,10 @@ public sealed record ActionRecord : Identifiable
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? MetadataFetcher { get; init; }
+
+    /// <summary>
+    /// Failure reason if Record is <see cref="Schema.ActionsContext.Actions.ChapterDownloadFailedActionRecord"/>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
 }

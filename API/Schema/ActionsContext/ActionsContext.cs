@@ -13,6 +13,7 @@ public class ActionsContext(DbContextOptions<ActionsContext> options) : TrangaBa
         modelBuilder.Entity<ActionRecord>()
             .HasDiscriminator(a => a.Action)
             .HasValue<ChapterDownloadedActionRecord>(Schema.ActionsContext.Actions.Actions.ChapterDownloaded)
+            .HasValue<ChapterDownloadFailedActionRecord>(Schema.ActionsContext.Actions.Actions.ChapterDownloadFailed)
             .HasValue<CoverDownloadedActionRecord>(Schema.ActionsContext.Actions.Actions.CoverDownloaded)
             .HasValue<ChaptersRetrievedActionRecord>(Schema.ActionsContext.Actions.Actions.ChaptersRetrieved)
             .HasValue<MetadataUpdatedActionRecord>(Schema.ActionsContext.Actions.Actions.MetadataUpdated)
@@ -23,6 +24,9 @@ public class ActionsContext(DbContextOptions<ActionsContext> options) : TrangaBa
         modelBuilder.Entity<ChapterDownloadedActionRecord>().Property(a => a.MangaId).HasColumnName("MangaId");
         modelBuilder.Entity<ChapterDownloadedActionRecord>().Property(a => a.ChapterId).HasColumnName("ChapterId");
         
+        modelBuilder.Entity<ChapterDownloadFailedActionRecord>().Property(a => a.MangaId).HasColumnName("MangaId");
+        modelBuilder.Entity<ChapterDownloadFailedActionRecord>().Property(a => a.ChapterId).HasColumnName("ChapterId");
+
         modelBuilder.Entity<CoverDownloadedActionRecord>().Property(a => a.MangaId).HasColumnName("MangaId");
         
         modelBuilder.Entity<ChaptersRetrievedActionRecord>().Property(a => a.MangaId).HasColumnName("MangaId");
