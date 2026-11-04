@@ -134,6 +134,18 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
     {
         if(await context.Mangas.FirstOrDefaultAsync(m => m.Key == MangaId, HttpContext.RequestAborted) is not { } manga)
             return TypedResults.NotFound(nameof(MangaId));
+
+        // Stop pending downloads first so none writes a file for a series that no longer exists
+        HashSet<string> chapterConnectorIds = (await context.MangaConnectorToChapter
+                .Where(id => id.Obj!.ParentMangaId == MangaId)
+                .Select(id => id.Key)
+                .ToListAsync(HttpContext.RequestAborted))
+            .ToHashSet();
+        foreach (DownloadChapterFromMangaconnectorWorker worker in Tranga.GetKnownWorkers()
+                     .OfType<DownloadChapterFromMangaconnectorWorker>()
+                     .Where(w => chapterConnectorIds.Contains(w.ChapterIdId)))
+            Tranga.StopWorker(worker);
+
         context.Remove(manga);
         
         if(await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)

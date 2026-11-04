@@ -189,7 +189,15 @@ public static class Tranga
         {
             while (RunningWorkers.Count < Math.Max(1, Settings.MaxConcurrentWorkers)
                    && QueuedWorkers.TryDequeue(out (BaseWorker Worker, Action? FinishedCallback) queuedWorker))
+            {
+                // Stopped while waiting in the queue
+                if (queuedWorker.Worker.State == WorkerExecutionState.Cancelled)
+                {
+                    KnownWorkers.TryRemove(queuedWorker.Worker, out _);
+                    continue;
+                }
                 StartWorkerImmediately(queuedWorker.Worker, queuedWorker.FinishedCallback);
+            }
         }
     }
 
@@ -234,6 +242,7 @@ public static class Tranga
             PeriodicWorkers.Remove(periodicWorker, out _);
         worker.Cancel();
         RunningWorkers.Remove(worker, out _);
+        KnownWorkers.TryRemove(worker, out _);
     }
     
     internal static async Task<(Manga manga, MangaConnectorId<Manga> id)?> AddMangaToContext(this MangaContext context, (Manga, MangaConnectorId<Manga>) addManga, CancellationToken token) =>

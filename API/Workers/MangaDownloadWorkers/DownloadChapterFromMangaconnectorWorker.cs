@@ -178,6 +178,12 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
     /// </summary>
     private async Task<BaseWorker[]> RecordFailure(Chapter chapter, string reason)
     {
+        // Stopped on purpose (worker stop or series removed): not a failure worth recording or notifying
+        if (State == WorkerExecutionState.Cancelled)
+        {
+            Log.Info($"Download of {chapter} was stopped.");
+            return [];
+        }
         Log.Error($"Failed to download {chapter.ParentManga} {chapter}: {reason}");
         FailureBackoff.AddOrUpdate(chapter.Key,
             _ => (1, DateTime.UtcNow + BackoffFor(1)),

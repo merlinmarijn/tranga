@@ -82,7 +82,8 @@ internal static class ChapterExporter
             }
             catch (Exception exception)
             {
-                Log.Error(exception);
+                if (cancellationToken.IsCancellationRequested) Log.Debug(exception.Message);
+                else Log.Error(exception);
                 images.ForEach(image => image.Dispose());
                 return $"unable to download {imageLabel} ({exception.GetType().Name}: {exception.Message}): {imageUrl}";
             }
