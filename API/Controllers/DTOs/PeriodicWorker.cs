@@ -29,5 +29,5 @@ public sealed record PeriodicWorker(string Key, IEnumerable<string> Dependencies
     /// </summary>
     [Required]
     [Description("Timestamp when Worker is scheduled to execute next.")]
-    public DateTime NextExecution { get; init; } = LastExecution;
+    public DateTime NextExecution { get; init; } = NextExecution;
 }

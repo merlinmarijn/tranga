@@ -75,6 +75,34 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
     }
 
     /// <summary>
+    /// Returns all <see cref="Schema.MangaContext.Manga"/> in the library: assigned to a <see cref="FileLibrary"/> or downloading, including paused ones
+    /// </summary>
+    /// <response code="200"><see cref="MinimalManga"/> exert of <see cref="Schema.MangaContext.Manga"/>. Use <see cref="GetManga"/> for more information</response>
+    /// <response code="500">Error during Database Operation</response>
+    [HttpGet("InLibrary")]
+    [ProducesResponseType<Manga[]>(Status200OK, "application/json")]
+    public async Task<Ok<List<Manga>>> GetMangaInLibrary()
+    {
+        // Full DTOs in one query so clients do not need a request per series
+        List<Schema.MangaContext.Manga> result = await context.MangaWithMetadata()
+            .Include(m => m.MangaConnectorIds)
+            .Where(m => m.LibraryId != null || m.MangaConnectorIds.Any(id => id.UseForDownload))
+            .OrderBy(m => m.Name)
+            .AsSplitQuery()
+            .ToListAsync(HttpContext.RequestAborted);
+        return TypedResults.Ok(result.Select(ToDto).ToList());
+    }
+
+    private static Manga ToDto(Schema.MangaContext.Manga manga) => new(manga.Key, manga.Name, manga.Description, manga.ReleaseStatus,
+        manga.MangaConnectorIds.Select(id => new DTOs.MangaConnectorId<Manga>(id.Key, id.MangaConnectorName, id.ObjId, id.WebsiteUrl, id.UseForDownload)),
+        manga.IgnoreChaptersBefore, manga.Year, manga.OriginalLanguage,
+        manga.Authors.Select(a => new Author(a.Key, a.AuthorName)),
+        manga.MangaTags.Select(t => t.Tag),
+        manga.Links.Select(l => new Link(l.Key, l.LinkProvider, l.LinkUrl)),
+        manga.AltTitles.Select(a => new AltTitle(a.Language, a.Title)),
+        manga.LibraryId);
+
+    /// <summary>
     /// Return <see cref="Schema.MangaContext.Manga"/> with <paramref name="MangaId"/>
     /// </summary>
     /// <param name="MangaId"><see cref="Schema.MangaContext.Manga"/>.Key</param>
@@ -88,14 +116,7 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
         if (await context.MangaWithMetadata().Include(m => m.MangaConnectorIds).FirstOrDefaultAsync(m => m.Key == MangaId, HttpContext.RequestAborted) is not { } manga)
             return TypedResults.NotFound(nameof(MangaId));
         
-        IEnumerable<DTOs.MangaConnectorId<Manga>> ids = manga.MangaConnectorIds.Select(id => new DTOs.MangaConnectorId<Manga>(id.Key, id.MangaConnectorName, id.ObjId, id.WebsiteUrl, id.UseForDownload));
-        IEnumerable<Author> authors = manga.Authors.Select(a => new Author(a.Key, a.AuthorName));
-        IEnumerable<string> tags = manga.MangaTags.Select(t => t.Tag);
-        IEnumerable<Link> links = manga.Links.Select(l => new Link(l.Key, l.LinkProvider, l.LinkUrl));
-        IEnumerable<AltTitle> altTitles = manga.AltTitles.Select(a => new AltTitle(a.Language, a.Title));
-        Manga result = new (manga.Key, manga.Name, manga.Description, manga.ReleaseStatus, ids, manga.IgnoreChaptersBefore, manga.Year, manga.OriginalLanguage, authors, tags, links, altTitles, manga.LibraryId);
-        
-        return TypedResults.Ok(result);
+        return TypedResults.Ok(ToDto(manga));
     }
 
     /// <summary>
@@ -131,7 +152,8 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
     [HttpPost("{MangaIdFrom}/MergeInto/{MangaIdInto}")]
     [ProducesResponseType(Status200OK)]
     [ProducesResponseType<string>(Status404NotFound, "text/plain")]
-    public async Task<Results<Ok, NotFound<string>>> MergeIntoManga (string MangaIdFrom, string MangaIdInto)
+    [ProducesResponseType<string>(Status500InternalServerError, "text/plain")]
+    public async Task<Results<Ok, NotFound<string>, InternalServerError<string>>> MergeIntoManga (string MangaIdFrom, string MangaIdInto)
     {
         if (await context.MangaIncludeAll().FirstOrDefaultAsync(m => m.Key == MangaIdFrom, HttpContext.RequestAborted) is not { } from)
             return TypedResults.NotFound(nameof(MangaIdFrom));
@@ -139,6 +161,9 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
             return TypedResults.NotFound(nameof(MangaIdInto));
         
         BaseWorker[] newJobs = into.MergeFrom(from, context);
+        // Persist before moving files so DB and disk cannot diverge
+        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+            return TypedResults.InternalServerError(result.exceptionMessage);
         Tranga.AddWorkers(newJobs);
         
         return TypedResults.Ok();
@@ -183,7 +208,7 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
         
         DateTime lastModified = data.fileInfo.LastWriteTime;
         EntityTagHeaderValue entityTagHeaderValue = EntityTagHeaderValue.Parse($"\"{lastModified.Ticks}\"");
-        if(HttpContext.Request.Headers.ETag.Equals(entityTagHeaderValue.Tag.Value))
+        if(HttpContext.Request.Headers.IfNoneMatch.Contains(entityTagHeaderValue.Tag.Value))
             return TypedResults.StatusCode(Status304NotModified);
         HttpContext.Response.Headers.CacheControl = "public";
         return TypedResults.Bytes(data.stream.ToArray(), "image/jpeg", lastModified: new DateTimeOffset(lastModified), entityTag: entityTagHeaderValue);
@@ -219,10 +244,11 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
         manga.Library = library;
         Dictionary<Chapter, string?> newPaths = oldPaths.ToDictionary(kv => kv.Key, kv => kv.Key.FullArchiveFilePath);
         IEnumerable<MoveFileOrFolderWorker> workers = oldPaths.Select(kv => new MoveFileOrFolderWorker(newPaths[kv.Key]!, kv.Value!));
-        Tranga.AddWorkers(workers);
         
+        // Persist before moving files so DB and disk cannot diverge
         if(await context.Sync(HttpContext.RequestAborted, GetType(), "Move Manga") is { success: false } mangaContextResult)
             return TypedResults.InternalServerError(mangaContextResult.exceptionMessage);
+        Tranga.AddWorkers(workers);
         
         actionsContext.Actions.Add(new LibraryMovedActionRecord(manga, library));
         if(await actionsContext.Sync(HttpContext.RequestAborted, GetType(), "Move Manga") is { success: false } actionsContextResult)
@@ -307,7 +333,7 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
         if (await context.Mangas.FirstOrDefaultAsync(m => m.Key == MangaId, HttpContext.RequestAborted) is not { } manga)
             return TypedResults.NotFound(nameof(MangaId));
 
-        return new SearchController(context).SearchManga(MangaConnectorName, manga.Name);
+        return new SearchController(context) { ControllerContext = ControllerContext }.SearchManga(MangaConnectorName, manga.Name);
     }
     
     /// <summary>
@@ -393,7 +419,7 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
             return TypedResults.InternalServerError();
 
         List<string> similarIds = mangaNames
-            .Where(kv => NeedlemanWunschStringUtil.CalculateSimilarityPercentage(name, kv.Value) > 0.8)
+            .Where(kv => NeedlemanWunschStringUtil.CalculateSimilarityPercentage(name, kv.Value) > 80)
             .Select(kv => kv.Key)
             .ToList();
         
@@ -420,6 +446,21 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
     }
 
     /// <summary>
+    /// Queue a chapter-list refresh for every <see cref="Schema.MangaContext.MangaConnectorId{T}"/> marked for download
+    /// </summary>
+    /// <response code="200">Number of queued Workers</response>
+    [HttpPost("CheckForNewChapters")]
+    [ProducesResponseType<int>(Status200OK, "text/plain")]
+    public async Task<Ok<int>> CheckForNewChapters()
+    {
+        List<Schema.MangaContext.MangaConnectorId<Schema.MangaContext.Manga>> ids = await context.MangaConnectorToManga
+            .Where(id => id.UseForDownload)
+            .ToListAsync(HttpContext.RequestAborted);
+        Tranga.AddWorkers(ids.Select(id => new RetrieveMangaChaptersFromMangaconnectorWorker(id, Tranga.Settings.DownloadLanguage)));
+        return TypedResults.Ok(ids.Count);
+    }
+
+    /// <summary>
     /// Force re-check failed/undownloaded <see cref="Chapter"/> for <see cref="Manga"/>
     /// </summary>
     /// <param name="mangaId">(optional)<see cref="Manga"/>.Key</param>
@@ -429,7 +470,7 @@ public class MangaController(MangaContext context, ActionsContext actionsContext
     [ProducesResponseType<int>(Status200OK, "text/plain")]
     public async Task<Ok<int>> ForceRecheckMangaChapters(string? mangaId = null)
     {
-        IQueryable<Schema.MangaContext.MangaConnectorId<Chapter>> queryable = context.MangaConnectorToChapter.Where(chId  => chId.Obj!.Downloaded);
+        IQueryable<Schema.MangaContext.MangaConnectorId<Chapter>> queryable = context.MangaConnectorToChapter.Where(chId => !chId.Obj!.Downloaded);
         if(mangaId is not null)
             queryable = queryable.Where(chId => chId.Obj!.ParentMangaId == mangaId);
         

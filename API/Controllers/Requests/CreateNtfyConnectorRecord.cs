@@ -31,16 +31,14 @@ public record CreateNtfyConnectorRecord
     /// <summary>
     /// The Username used for authentication
     /// </summary>
-    [Required]
-    [Description("The Username used for authentication")]
-    public required string Username { get; init; }
+    [Description("The Username used for authentication (optional for public topics)")]
+    public string? Username { get; init; }
     
     /// <summary>
     /// The Password used for authentication
     /// </summary>
-    [Required]
-    [Description("The Password used for authentication")]
-    public required string Password { get; init; }
+    [Description("The Password used for authentication (optional for public topics)")]
+    public string? Password { get; init; }
     
     /// <summary>
     /// The Topic of Notifications

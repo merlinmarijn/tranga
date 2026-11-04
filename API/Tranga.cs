@@ -76,6 +76,13 @@ public static class Tranga
     public static void AddWorker(BaseWorker worker)
     {
         Log.DebugFormat("Adding Worker {0}", worker);
+        // Two workers writing one chapter archive collide on the same file
+        if (worker is DownloadChapterFromMangaconnectorWorker download && KnownWorkers.Keys
+                .OfType<DownloadChapterFromMangaconnectorWorker>().Any(w => w.ChapterIdId == download.ChapterIdId))
+        {
+            Log.DebugFormat("Skipping {0}: chapter already queued or downloading", worker);
+            return;
+        }
         KnownWorkers.TryAdd(worker, 0);
         if(worker is not IPeriodic)
             StartWorker(worker, RemoveFromKnownWorkers(worker));
@@ -155,15 +162,25 @@ public static class Tranga
 
     private static void StartWorkerImmediately(BaseWorker worker, Action? finishedCallback)
     {
-        Action afterWorkCallback = DefaultAfterWork(worker, finishedCallback);
+        // A periodic run outlasting its interval must not start the same instance twice
+        if (RunningWorkers.ContainsKey(worker))
+        {
+            Log.DebugFormat("{0} still running, skipping this run.", worker);
+            finishedCallback?.Invoke();
+            return;
+        }
         if (worker is BaseWorkerWithContexts withContexts)
         {
-            RunningWorkers.TryAdd(withContexts, withContexts.DoWork(ServiceProvider.CreateScope(), afterWorkCallback));
+            IServiceScope scope = ServiceProvider!.CreateScope();
+            Action afterScopedWork = DefaultAfterWork(worker, () =>
+            {
+                scope.Dispose();
+                finishedCallback?.Invoke();
+            });
+            RunningWorkers.TryAdd(withContexts, withContexts.DoWork(scope, afterScopedWork));
+            return;
         }
-        else
-        {
-            RunningWorkers.TryAdd(worker, worker.DoWork(afterWorkCallback));
-        }
+        RunningWorkers.TryAdd(worker, worker.DoWork(DefaultAfterWork(worker, finishedCallback)));
     }
 
     private static void StartQueuedWorkers()

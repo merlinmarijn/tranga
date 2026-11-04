@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using API.Schema.ActionsContext;
 using API.Schema.ActionsContext.Actions;
 
@@ -42,6 +42,7 @@ public class MoveFileOrFolderWorker(string toLocation, string fromLocation, IEnu
         catch (Exception e)
         {
             Log.Error(e);
+            return [];
         }
 
         ActionsContext.Actions.Add(new DataMovedActionRecord(FromLocation, ToLocation));

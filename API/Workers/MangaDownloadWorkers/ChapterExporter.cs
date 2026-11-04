@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.IO.Compression;
 using System.Text;
 using System.Xml.Linq;
@@ -20,13 +20,39 @@ internal static class ChapterExporter
     private static readonly SemaphoreSlim SeriesExportLock = new(1, 1);
 
     /// <returns>null on success, otherwise a single-line reason why the export failed</returns>
-    internal static Task<string?> Export(ChapterDownloadPayload payload, MangaConnector connector, Chapter chapter,
-        string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken) => payload switch
+    internal static async Task<string?> Export(ChapterDownloadPayload payload, MangaConnector connector, Chapter chapter,
+        string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken)
     {
-        ImagePagesPayload pages => ExportManga(pages, connector, chapter, outputPath, referrer, beforeArchive, cancellationToken),
-        ChapterHtmlPayload html => ExportNovel(html, chapter, outputPath, beforeArchive, cancellationToken),
-        _ => Task.FromResult<string?>($"unsupported payload type {payload.GetType().Name}")
-    };
+        DateTime? before = File.Exists(outputPath) ? File.GetLastWriteTimeUtc(outputPath) : null;
+        string? error;
+        try
+        {
+            error = await (payload switch
+            {
+                ImagePagesPayload pages => ExportManga(pages, connector, chapter, outputPath, referrer, beforeArchive, cancellationToken),
+                ChapterHtmlPayload html => ExportNovel(html, chapter, outputPath, beforeArchive, cancellationToken),
+                _ => Task.FromResult<string?>($"unsupported payload type {payload.GetType().Name}")
+            });
+        }
+        catch
+        {
+            DeletePartialArchive(outputPath, before);
+            throw;
+        }
+        if (error is not null)
+            DeletePartialArchive(outputPath, before);
+        return error;
+    }
+
+    // A half-written archive would later be detected as "downloaded" and never retried
+    // Only touches files created or rewritten during this export; an untouched earlier archive stays
+    private static void DeletePartialArchive(string outputPath, DateTime? lastWriteBefore)
+    {
+        if (!File.Exists(outputPath) || File.GetLastWriteTimeUtc(outputPath) == lastWriteBefore) return;
+        try { File.Delete(outputPath); }
+        catch (Exception e) { Log.Error(e); }
+    }
+
 
     private static async Task<string?> ExportManga(ImagePagesPayload pages, MangaConnector connector, Chapter chapter,
         string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken)
@@ -174,7 +200,12 @@ internal static class ChapterExporter
                     downloaded.Add((chapter, contents));
             }
             if (downloaded.Count == 0)
+            {
+                // Nothing left to bundle: a stale book would still contain deleted chapters
+                if (File.Exists(outputPath))
+                    File.Delete(outputPath);
                 return false;
+            }
 
             string temporaryPath = $"{outputPath}.{Guid.NewGuid():N}.tmp";
             try
@@ -342,6 +373,7 @@ internal static class ChapterExporter
                 Log.Debug("Unable to process image: Invalid Content");
             else
                 Log.Error(exception);
+            imageStream.Position = 0; // LoadAsync advanced the stream
             await imageStream.CopyToAsync(processedImage, cancellationToken);
             processedImage.Position = 0;
             return processedImage;

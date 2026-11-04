@@ -217,6 +217,29 @@
         }
       }
     },
+    "/v2/Chapters/InLibrary": {
+      "get": {
+        "tags": [
+          "Chapters"
+        ],
+        "summary": "Returns a compact list of every API.Controllers.DTOs.Chapter of every API.Schema.MangaContext.Manga in the library, in one request",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json; x-version=2.0": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/Chapters/LatestAvailable/{MangaId}": {
       "get": {
         "tags": [
@@ -1474,6 +1497,32 @@
         }
       }
     },
+    "/v2/Manga/InLibrary": {
+      "get": {
+        "tags": [
+          "Manga"
+        ],
+        "summary": "Returns all API.Schema.MangaContext.Manga in the library: assigned to a API.Controllers.DTOs.FileLibrary or downloading, including paused ones",
+        "responses": {
+          "200": {
+            "description": "API.Controllers.DTOs.MinimalManga exert of API.Schema.MangaContext.Manga. Use M:API.Controllers.MangaController.GetManga(System.String) for more information",
+            "content": {
+              "application/json; x-version=2.0": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Manga"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error during Database Operation"
+          }
+        }
+      }
+    },
     "/v2/Manga/{MangaId}": {
       "get": {
         "tags": [
@@ -1589,6 +1638,16 @@
           },
           "404": {
             "description": "API.Controllers.DTOs.Manga with MangaIdFrom or MangaIdInto not found",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
             "content": {
               "text/plain; x-version=2.0": {
                 "schema": {
@@ -2066,6 +2125,27 @@
               "text/plain; x-version=2.0": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/Manga/CheckForNewChapters": {
+      "post": {
+        "tags": [
+          "Manga"
+        ],
+        "summary": "Queue a chapter-list refresh for every API.Schema.MangaContext.MangaConnectorId`1 marked for download",
+        "responses": {
+          "200": {
+            "description": "Number of queued Workers",
+            "content": {
+              "text/plain; x-version=2.0": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
                 }
               }
             }
@@ -3821,9 +3901,6 @@
               }
             }
           },
-          "202": {
-            "description": "Accepted"
-          },
           "412": {
             "description": "API.Workers.BaseWorker was already not running",
             "content": {
@@ -4195,6 +4272,49 @@
         },
         "additionalProperties": false
       },
+      "ChapterSummary": {
+        "required": [
+          "chapterNumber",
+          "downloaded",
+          "key",
+          "mangaId"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Chapter key"
+          },
+          "mangaId": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Key of the Manga this Chapter belongs to"
+          },
+          "volume": {
+            "type": "integer",
+            "description": "Volume number",
+            "format": "int32",
+            "nullable": true
+          },
+          "chapterNumber": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Chapter number"
+          },
+          "title": {
+            "type": "string",
+            "description": "Chapter title",
+            "nullable": true
+          },
+          "downloaded": {
+            "type": "boolean",
+            "description": "Whether the archive exists"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Compact API.Schema.MangaContext.Chapter for bulk library views"
+      },
       "ContentKind": {
         "enum": [
           "Manga",
@@ -4350,11 +4470,9 @@
       "CreateNtfyConnectorRecord": {
         "required": [
           "name",
-          "password",
           "priority",
           "topic",
-          "url",
-          "username"
+          "url"
         ],
         "type": "object",
         "properties": {
@@ -4375,14 +4493,14 @@
             "format": "int32"
           },
           "username": {
-            "minLength": 1,
             "type": "string",
-            "description": "The Username used for authentication"
+            "description": "The Username used for authentication",
+            "nullable": true
           },
           "password": {
-            "minLength": 1,
             "type": "string",
-            "description": "The Password used for authentication"
+            "description": "The Password used for authentication",
+            "nullable": true
           },
           "topic": {
             "minLength": 1,

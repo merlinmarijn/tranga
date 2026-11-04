@@ -1,4 +1,4 @@
-using API.Schema;
+﻿using API.Schema;
 using log4net;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
@@ -107,7 +107,8 @@ public abstract class BaseWorker : Identifiable
     {
         DateTime endTime = DateTime.UtcNow;
         Log.InfoFormat("Completed {0}\n\t{1} ms", this, endTime.Subtract(startTime).TotalMilliseconds);
-        this.State = WorkerExecutionState.Completed;
+        if (State == WorkerExecutionState.Running) // keep Cancelled/Failed visible
+            this.State = WorkerExecutionState.Completed;
         if(this is IPeriodic periodic)
             periodic.LastExecution = DateTime.UtcNow;
         callback?.Invoke();

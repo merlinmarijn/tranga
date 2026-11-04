@@ -65,12 +65,9 @@ public class Chapter : Identifiable, IComparable<Chapter>
     {
         if (other is not { } otherChapter)
             throw new ArgumentException($"{other} can not be compared to {this}");
-        return VolumeNumber?.CompareTo(otherChapter.VolumeNumber) switch
-        {
-            < 0 => -1,
-            > 0 => 1,
-            _ => CompareChapterNumbers(ChapterNumber, otherChapter.ChapterNumber)
-        };
+        // Volumes only order chapters when both have one; otherwise comparison would be asymmetric
+        int volume = VolumeNumber is { } a && otherChapter.VolumeNumber is { } b ? a.CompareTo(b) : 0;
+        return volume != 0 ? Math.Sign(volume) : CompareChapterNumbers(ChapterNumber, otherChapter.ChapterNumber);
     }
 
 
@@ -215,7 +212,7 @@ public class Chapter : Identifiable, IComparable<Chapter>
             stringBuilder.Append(value);
         }
 
-        stringBuilder.Append(ParentManga.ContentKind == ContentKind.Novel ? ".tranga" : ".cbz");
+        stringBuilder.Append(ParentManga?.ContentKind == ContentKind.Novel ? ".tranga" : ".cbz");
 
         return stringBuilder.ToString().CleanNameForWindows();
     }

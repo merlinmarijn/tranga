@@ -1,4 +1,4 @@
-using API.Controllers.DTOs;
+﻿using API.Controllers.DTOs;
 using API.Controllers.Requests;
 using API.Schema.MangaContext;
 using API.Workers.MangaDownloadWorkers;
@@ -19,6 +19,8 @@ namespace API.Controllers;
 [Route("v{v:apiVersion}/[controller]")]
 public class ChaptersController(MangaContext context) : ControllerBase
 {
+    private static readonly log4net.ILog Log = log4net.LogManager.GetLogger(typeof(ChaptersController));
+
     /// <summary>
     /// Returns all <see cref="Schema.MangaContext.Chapter"/> of <see cref="Schema.MangaContext.Manga"/> with <paramref name="MangaId"/>
     /// </summary>
@@ -69,6 +71,21 @@ public class ChaptersController(MangaContext context) : ControllerBase
     }
     
     /// <summary>
+    /// Returns a compact list of every <see cref="Chapter"/> of every <see cref="Schema.MangaContext.Manga"/> in the library, in one request
+    /// </summary>
+    /// <response code="200"></response>
+    [HttpGet("InLibrary")]
+    [ProducesResponseType<ChapterSummary[]>(Status200OK, "application/json")]
+    public async Task<Ok<List<ChapterSummary>>> GetLibraryChapters()
+    {
+        List<ChapterSummary> chapters = await context.Chapters
+            .Where(ch => ch.ParentManga.LibraryId != null || ch.ParentManga.MangaConnectorIds.Any(id => id.UseForDownload))
+            .Select(ch => new ChapterSummary(ch.Key, ch.ParentMangaId, ch.VolumeNumber, ch.ChapterNumber, ch.Title, ch.Downloaded))
+            .ToListAsync(HttpContext.RequestAborted);
+        return TypedResults.Ok(chapters);
+    }
+
+    /// <summary>
     /// Returns the latest <see cref="Chapter"/> of requested <see cref="Schema.MangaContext.Manga"/>
     /// </summary>
     /// <param name="MangaId"><see cref="Schema.MangaContext.Manga"/>.Key</param>
@@ -81,11 +98,11 @@ public class ChaptersController(MangaContext context) : ControllerBase
     [ProducesResponseType<string>(Status404NotFound, "text/plain")]
     public async Task<Results<Ok<Chapter>, NoContent, NotFound<string>>> GetLatestChapter(string MangaId)
     {
-        if(await context.Chapters.Include(ch => ch.MangaConnectorIds)
-               .Where(ch => ch.ParentMangaId == MangaId)
-               .ToListAsync(HttpContext.RequestAborted)
-           is not { } dbChapters)
+        if (!await context.Mangas.AnyAsync(m => m.Key == MangaId, HttpContext.RequestAborted))
             return TypedResults.NotFound(nameof(MangaId));
+        List<Schema.MangaContext.Chapter> dbChapters = await context.Chapters.Include(ch => ch.MangaConnectorIds)
+               .Where(ch => ch.ParentMangaId == MangaId)
+               .ToListAsync(HttpContext.RequestAborted);
 
         Schema.MangaContext.Chapter? c = dbChapters.Max();
         if (c is null)
@@ -113,11 +130,11 @@ public class ChaptersController(MangaContext context) : ControllerBase
     [ProducesResponseType(Status503ServiceUnavailable)]
     public async Task<Results<Ok<Chapter>, NoContent, NotFound<string>, StatusCodeHttpResult>>  GetLatestChapterDownloaded(string MangaId)
     {
-        if(await context.Chapters.Include(ch => ch.MangaConnectorIds)
-               .Where(ch => ch.ParentMangaId == MangaId && ch.Downloaded)
-               .ToListAsync(HttpContext.RequestAborted)
-           is not { } dbChapters)
+        if (!await context.Mangas.AnyAsync(m => m.Key == MangaId, HttpContext.RequestAborted))
             return TypedResults.NotFound(nameof(MangaId));
+        List<Schema.MangaContext.Chapter> dbChapters = await context.Chapters.Include(ch => ch.MangaConnectorIds)
+               .Where(ch => ch.ParentMangaId == MangaId && ch.Downloaded)
+               .ToListAsync(HttpContext.RequestAborted);
 
         Schema.MangaContext.Chapter? c = dbChapters.Max();
         if (c is null)
@@ -284,8 +301,9 @@ public class ChaptersController(MangaContext context) : ControllerBase
         // Otherwise the periodic download worker would immediately fetch it again
         foreach (Schema.MangaContext.MangaConnectorId<Schema.MangaContext.Chapter> id in chapter.MangaConnectorIds)
             id.UseForDownload = false;
-        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+        if (await context.Sync(CancellationToken.None, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
             return TypedResults.InternalServerError(result.exceptionMessage);
+        await RebuildNovelSeries(chapter.ParentMangaId);
         return TypedResults.Ok();
     }
 
@@ -312,8 +330,9 @@ public class ChaptersController(MangaContext context) : ControllerBase
         if (TryDeleteArchive(chapter) is { } error)
             return TypedResults.InternalServerError(error);
         chId.UseForDownload = true;
-        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+        if (await context.Sync(CancellationToken.None, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
             return TypedResults.InternalServerError(result.exceptionMessage);
+        await RebuildNovelSeries(chapter.ParentMangaId);
         Tranga.AddWorker(new DownloadChapterFromMangaconnectorWorker(chId));
         return TypedResults.Ok();
     }
@@ -366,8 +385,9 @@ public class ChaptersController(MangaContext context) : ControllerBase
             foreach (Schema.MangaContext.MangaConnectorId<Schema.MangaContext.Chapter> id in chapter.MangaConnectorIds)
                 id.UseForDownload = false;
         }
-        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+        if (await context.Sync(CancellationToken.None, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
             return TypedResults.InternalServerError(result.exceptionMessage);
+        await RebuildNovelSeries(MangaId);
         if (errors.Count > 0)
             return TypedResults.InternalServerError(string.Join(Environment.NewLine, errors.Distinct()));
         return TypedResults.Ok(chapters.Count);
@@ -404,11 +424,29 @@ public class ChaptersController(MangaContext context) : ControllerBase
             chId.UseForDownload = true;
             queued++;
         }
-        if (await context.Sync(HttpContext.RequestAborted, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
+        if (await context.Sync(CancellationToken.None, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } result)
             return TypedResults.InternalServerError(result.exceptionMessage);
+        await RebuildNovelSeries(MangaId);
         if (errors.Count > 0)
             return TypedResults.InternalServerError(string.Join(Environment.NewLine, errors.Distinct()));
         return TypedResults.Ok(queued);
+    }
+
+    /// <summary>Novels keep a Complete.epub bundle; rebuild it so removed chapters disappear from it too.</summary>
+    private async Task RebuildNovelSeries(string mangaId)
+    {
+        // Best effort: the delete already succeeded, so a rebuild problem must not fail the request
+        try
+        {
+            if (await context.MangaWithMetadata().Include(m => m.Library).Include(m => m.Chapters)
+                    .FirstOrDefaultAsync(m => m.Key == mangaId, CancellationToken.None) is not { ContentKind: ContentKind.Novel } novel)
+                return;
+            await ChapterExporter.ExportNovelSeries(novel, novel.Chapters.Where(ch => ch.Downloaded), CancellationToken.None);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Failed rebuilding complete EPUB for {mangaId}", e);
+        }
     }
 
     private async Task<List<Schema.MangaContext.Chapter>?> LoadMangaChaptersWithFiles(string mangaId)
@@ -432,9 +470,12 @@ public class ChaptersController(MangaContext context) : ControllerBase
     /// <returns>Error message, or null on success</returns>
     private static string? TryDeleteArchive(Schema.MangaContext.Chapter chapter)
     {
+        // Delete whatever is on disk regardless of the Downloaded flag, which can be stale
+        if (chapter.Downloaded && chapter.FullArchiveFilePath is null)
+            return "archive path unknown (series has no file library)";
         try
         {
-            if (chapter.Downloaded && chapter.FullArchiveFilePath is { } path && System.IO.File.Exists(path))
+            if (chapter.FullArchiveFilePath is { } path && System.IO.File.Exists(path))
                 System.IO.File.Delete(path);
         }
         catch (Exception e)

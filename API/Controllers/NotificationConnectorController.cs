@@ -1,4 +1,5 @@
-﻿using System.Text;
+using System.Text.Json;
+using System.Text;
 using API.Controllers.DTOs;
 using API.Controllers.Requests;
 using API.Schema.NotificationsContext;
@@ -69,6 +70,9 @@ public class NotificationConnectorController(NotificationsContext context) : Con
         API.Schema.NotificationsContext.NotificationConnectors.NotificationConnector newConnector =
             new(requestData.Name, requestData.Url, requestData.Headers, requestData.HttpMethod, requestData.Body);
         
+        // Name is the primary key: replace an existing connector instead of failing on a duplicate key
+        if (await context.NotificationConnectors.FirstOrDefaultAsync(c => c.Name == newConnector.Name, HttpContext.RequestAborted) is { } existing)
+            context.NotificationConnectors.Remove(existing);
         context.NotificationConnectors.Add(newConnector);
         context.Notifications.Add(new ("Added new Notification Connector!", newConnector.Name, NotificationUrgency.High));
         
@@ -116,17 +120,18 @@ public class NotificationConnectorController(NotificationsContext context) : Con
     [ProducesResponseType<string>(Status500InternalServerError, "text/plain")]
     public async Task<Results<Created<string>, InternalServerError<string>>> CreateNtfyConnector ([FromBody]CreateNtfyConnectorRecord createNtfyConnectorRecord)
     {
-        //TODO Validate Data
-        string authHeader = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{createNtfyConnectorRecord.Username}:{createNtfyConnectorRecord.Password}"));
-        string auth = Convert.ToBase64String(Encoding.UTF8.GetBytes(authHeader)).Replace("=","");
-        
+        // ntfy JSON publishing: POST to the server root, topic in the body, keys lowercase
+        Dictionary<string, string> headers = new();
+        if (!string.IsNullOrEmpty(createNtfyConnectorRecord.Username) || !string.IsNullOrEmpty(createNtfyConnectorRecord.Password))
+            headers["Authorization"] = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{createNtfyConnectorRecord.Username}:{createNtfyConnectorRecord.Password}"));
+
         CreateNotificationConnectorRecord ntfyConnector = new ()
         {
             Name = createNtfyConnectorRecord.Name,
-            Url = $"{createNtfyConnectorRecord.Url}?auth={auth}",
+            Url = createNtfyConnectorRecord.Url,
             HttpMethod = "POST",
-            Body = $"{{\"message\": \"%text\", \"title\": \"%title\", \"Priority\": {createNtfyConnectorRecord.Priority} \"Topic\": \"{createNtfyConnectorRecord.Topic}\"}}",
-            Headers = new () {{"Authorization", auth}}
+            Body = $"{{\"topic\": {JsonSerializer.Serialize(createNtfyConnectorRecord.Topic)}, \"message\": \"%text\", \"title\": \"%title\", \"priority\": {createNtfyConnectorRecord.Priority}}}",
+            Headers = headers
         };
         return await CreateConnector(ntfyConnector);
     }

@@ -69,7 +69,7 @@ public class WorkerController(MangaContext context) : ControllerBase
     /// <response code="404"><see cref="BaseWorker"/> with <paramref name="WorkerId"/> could not be found</response>
     /// <response code="412"><see cref="BaseWorker"/> was already not running</response>
     [HttpPost("{WorkerId}/Stop")]
-    [ProducesResponseType(Status202Accepted)]
+    [ProducesResponseType(Status200OK)]
     [ProducesResponseType<string>(Status404NotFound, "text/plain")]
     [ProducesResponseType(Status412PreconditionFailed)]
     public Results<Ok, NotFound<string>, StatusCodeHttpResult> StopWorker(string WorkerId)

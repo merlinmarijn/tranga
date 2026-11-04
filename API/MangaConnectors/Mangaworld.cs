@@ -118,22 +118,22 @@ public sealed class Mangaworld : MangaConnector
         doc.LoadHtml(html);
 
         string title =
-            doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null)
+            doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null!)
             ?? doc.DocumentNode.SelectSingleNode("//h1")?.InnerText?.Trim()
             ?? slug.Replace('-', ' ');
 
         title = CleanTitleSuffix(title);
 
         string cover =
-            doc.DocumentNode.SelectSingleNode("//meta[@property='og:image']")?.GetAttributeValue("content", null)
-            ?? doc.DocumentNode.SelectSingleNode("//div[contains(@class,'cover')]//img")?.GetAttributeValue("src", null)
+            doc.DocumentNode.SelectSingleNode("//meta[@property='og:image']")?.GetAttributeValue("content", null!)
+            ?? doc.DocumentNode.SelectSingleNode("//div[contains(@class,'cover')]//img")?.GetAttributeValue("src", null!)
             ?? string.Empty;
 
         if (!string.IsNullOrEmpty(cover))
             cover = MakeAbsoluteUrl(seriesUrl, cover);
 
         string description =
-            doc.DocumentNode.SelectSingleNode("//meta[@name='description']")?.GetAttributeValue("content", null)
+            doc.DocumentNode.SelectSingleNode("//meta[@name='description']")?.GetAttributeValue("content", null!)
             ?? HtmlEntity.DeEntitize(
                 doc.DocumentNode.SelectSingleNode("//div[contains(@class,'description') or contains(@class,'trama')]")
                 ?.InnerText ?? string.Empty

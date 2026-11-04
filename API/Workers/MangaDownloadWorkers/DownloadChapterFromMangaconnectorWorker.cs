@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using API.MangaConnectors;
 using API.Schema.ActionsContext;
 using API.Schema.ActionsContext.Actions;
@@ -19,6 +19,25 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
     : BaseWorkerWithContexts(dependsOn)
 {
     public readonly string ChapterIdId = chId.Key;
+
+    // Keyed by Chapter.Key. In memory, seeded from ChapterDownloadFailed action records on startup (see SeedBackoff).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Failures, DateTime RetryAfter)> FailureBackoff = new();
+
+    /// <summary>True while a recently failed chapter should be skipped by the periodic scheduler.</summary>
+    internal static bool IsBackingOff(string chapterId) =>
+        FailureBackoff.TryGetValue(chapterId, out var entry) && entry.RetryAfter > DateTime.UtcNow;
+
+    /// <summary>Restore backoff after a restart: failures since the chapter's last successful download.</summary>
+    internal static void SeedBackoff(IEnumerable<(string ChapterId, int Failures, DateTime LastFailure)> history)
+    {
+        foreach ((string chapterId, int failures, DateTime lastFailure) in history)
+            if (failures > 0)
+                FailureBackoff.TryAdd(chapterId, (failures, lastFailure + BackoffFor(failures)));
+    }
+
+    /// <summary>Exponential backoff after each failure: 5 min, 10 min, ... capped at 24 h.</summary>
+    internal static TimeSpan BackoffFor(int failures) =>
+        TimeSpan.FromMinutes(Math.Min(5 * Math.Pow(2, Math.Max(0, failures - 1)), 24 * 60));
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
@@ -118,6 +137,7 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
             return await RecordFailure(chapter, exportError);
 
         chapter.Downloaded = true;
+        FailureBackoff.TryRemove(chapter.Key, out _);
         chapter.FileName = new FileInfo(saveArchiveFilePath).Name;
         if(await MangaContext.Sync(CancellationToken, GetType(), "Downloading complete") is { success: false } chapterContextException)
             return await RecordFailure(chapter, $"archive saved but database update failed: {chapterContextException.exceptionMessage}");
@@ -159,6 +179,9 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
     private async Task<BaseWorker[]> RecordFailure(Chapter chapter, string reason)
     {
         Log.Error($"Failed to download {chapter.ParentManga} {chapter}: {reason}");
+        FailureBackoff.AddOrUpdate(chapter.Key,
+            _ => (1, DateTime.UtcNow + BackoffFor(1)),
+            (_, e) => (e.Failures + 1, DateTime.UtcNow + BackoffFor(e.Failures + 1)));
         // ponytail: CancellationToken.None so timeouts are still recorded after the worker token fired.
         await ActionsContext.Actions.AddAsync(new ChapterDownloadFailedActionRecord(chapter.ParentManga, chapter, reason[..Math.Min(reason.Length, 2048)]), CancellationToken.None);
         if (await ActionsContext.Sync(CancellationToken.None, GetType(), "Download failed") is { success: false } actionsContextException)
