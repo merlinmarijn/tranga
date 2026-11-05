@@ -152,6 +152,7 @@ public static class Tranga
             if (QueuedWorkers.Count > 0 || RunningWorkers.Count >= Math.Max(1, Settings.MaxConcurrentWorkers))
             {
                 QueuedWorkers.Enqueue((worker, finishedCallback));
+                worker.SetStatus("Queued: max concurrency reached");
                 Log.DebugFormat("Queued {0}: max worker concurrency reached ({1}).", worker, Settings.MaxConcurrentWorkers);
                 return;
             }

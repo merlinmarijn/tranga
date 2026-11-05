@@ -74,10 +74,11 @@ public class WorkerController(MangaContext context) : ControllerBase
     [ProducesResponseType(Status412PreconditionFailed)]
     public Results<Ok, NotFound<string>, StatusCodeHttpResult> StopWorker(string WorkerId)
     {
-        if(Tranga.GetRunningWorkers().FirstOrDefault(w => w.Key == WorkerId) is not { } worker)
+        // Queued workers (Created) are known but not running; StartQueuedWorkers skips them once Cancelled
+        if(Tranga.GetKnownWorkers().FirstOrDefault(w => w.Key == WorkerId) is not { } worker)
             return TypedResults.NotFound(nameof(WorkerId));
         
-        if(worker.State is < WorkerExecutionState.Running or >= WorkerExecutionState.Completed)
+        if(worker.State is not (WorkerExecutionState.Created or WorkerExecutionState.Running))
             return TypedResults.StatusCode(Status412PreconditionFailed);
         
         Tranga.StopWorker(worker);
@@ -88,6 +89,7 @@ public class WorkerController(MangaContext context) : ControllerBase
     {
         string[] connectorIds = workers
             .OfType<DownloadChapterFromMangaconnectorWorker>()
+            .Where(worker => worker.MangaId is null) // running workers carry their own details
             .Select(worker => worker.ChapterIdId)
             .Distinct()
             .ToArray();
@@ -120,10 +122,19 @@ public class WorkerController(MangaContext context) : ControllerBase
 
     private static Worker ToDto(BaseWorker worker, IReadOnlyDictionary<string, DownloadDetails> downloadDetails)
     {
-        DownloadDetails? details = worker is DownloadChapterFromMangaconnectorWorker downloadWorker
-                                   && downloadDetails.TryGetValue(downloadWorker.ChapterIdId, out DownloadDetails? found)
-            ? found
-            : null;
+        DownloadDetails? details = worker.MangaId is not null
+            ? new DownloadDetails(worker.MangaId, worker.MangaTitle ?? "", worker.ChapterId, worker.ChapterNumber, worker.ChapterTitle)
+            : worker is DownloadChapterFromMangaconnectorWorker downloadWorker
+              && downloadDetails.TryGetValue(downloadWorker.ChapterIdId, out DownloadDetails? found)
+                ? found
+                : null;
+        WorkerTelemetry telemetry = worker.Telemetry;
+        IPeriodic? periodic = worker as IPeriodic;
+        bool hasRun = periodic is not null && periodic.LastExecution > DateTime.UnixEpoch;
+        // Queued download workers only know their chapter after the DB lookup
+        string description = worker is DownloadChapterFromMangaconnectorWorker { MangaTitle: null } && details is not null
+            ? $"Download {details.MangaTitle} chapter {details.ChapterNumber}"
+            : worker.Description;
 
         return new Worker(
             worker.Key,
@@ -135,13 +146,24 @@ public class WorkerController(MangaContext context) : ControllerBase
             details?.MangaTitle,
             details?.ChapterId,
             details?.ChapterNumber,
-            details?.ChapterTitle);
+            details?.ChapterTitle,
+            worker.Type,
+            description,
+            telemetry.StatusMessage,
+            telemetry.ProgressCurrent,
+            telemetry.ProgressTotal,
+            telemetry.StartedAt,
+            telemetry.FinishedAt,
+            periodic is not null,
+            periodic?.Interval,
+            hasRun ? periodic!.LastExecution : null,
+            hasRun ? periodic!.NextExecution : null);
     }
 
     private sealed record DownloadDetails(
         string MangaId,
         string MangaTitle,
-        string ChapterId,
-        string ChapterNumber,
+        string? ChapterId,
+        string? ChapterNumber,
         string? ChapterTitle);
 }

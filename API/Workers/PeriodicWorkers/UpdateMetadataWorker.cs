@@ -19,6 +19,8 @@ public class UpdateMetadataWorker(TimeSpan? interval = null, IEnumerable<BaseWor
     public DateTime LastExecution { get; set; } = DateTime.UnixEpoch;
     public TimeSpan Interval { get; set; } = interval ?? TimeSpan.FromHours(12);
 
+    public override string Description => "Update metadata";
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
     [SuppressMessage("ReSharper", "InconsistentNaming")]
@@ -33,6 +35,7 @@ public class UpdateMetadataWorker(TimeSpan? interval = null, IEnumerable<BaseWor
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
         Log.Debug("Updating metadata...");
+        SetStatus("Loading metadata entries");
         // Get MetadataEntries of Manga marked for download
         List<MetadataEntry> metadataEntriesToUpdate = await MangaContext.MangaConnectorToManga
             .Where(m => m.UseForDownload) // Get marked Manga
@@ -44,8 +47,10 @@ public class UpdateMetadataWorker(TimeSpan? interval = null, IEnumerable<BaseWor
             .ToListAsync(CancellationToken);
         Log.DebugFormat("Updating metadata of {0} manga...", metadataEntriesToUpdate.Count);
 
-        foreach (MetadataEntry metadataEntry in metadataEntriesToUpdate)
+        for (int i = 0; i < metadataEntriesToUpdate.Count; i++)
         {
+            MetadataEntry metadataEntry = metadataEntriesToUpdate[i];
+            SetStatus($"Updating metadata for {metadataEntry.Manga.Name} ({i + 1}/{metadataEntriesToUpdate.Count})", i, metadataEntriesToUpdate.Count);
             Log.DebugFormat("Updating metadata of {0}...", metadataEntry);
             if(Tranga.MetadataFetchers.FirstOrDefault(f => f.Name == metadataEntry.MetadataFetcherName) is not { } fetcher)
                 continue;
@@ -53,6 +58,7 @@ public class UpdateMetadataWorker(TimeSpan? interval = null, IEnumerable<BaseWor
             ActionsContext.Actions.Add(new MetadataUpdatedActionRecord(metadataEntry.Manga, fetcher));
         }
         Log.Debug("Updated metadata.");
+        SetStatus("Saving");
 
         if(await MangaContext.Sync(CancellationToken, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } e)
             Log.ErrorFormat("Failed to save database changes: {0}", e.exceptionMessage);

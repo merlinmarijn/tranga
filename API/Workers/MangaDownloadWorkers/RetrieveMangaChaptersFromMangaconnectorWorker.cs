@@ -17,6 +17,9 @@ public class RetrieveMangaChaptersFromMangaconnectorWorker(MangaConnectorId<Mang
     : BaseWorkerWithContexts(dependsOn)
 {
     private readonly string _mangaConnectorIdId = mcId.Key;
+    private string? _connectorName;
+
+    public override string Description => MangaTitle is null ? "Retrieve chapter list" : $"Retrieve chapter list for {MangaTitle} from {_connectorName}";
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
@@ -50,6 +53,9 @@ public class RetrieveMangaChaptersFromMangaconnectorWorker(MangaConnectorId<Mang
         Log.DebugFormat("Getting Chapters for MangaConnectorId {0}...", mangaConnectorId);
         
         Manga manga = mangaConnectorId.Obj;
+        _connectorName = mangaConnector.Name;
+        SetSubject(manga.Key, manga.Name);
+        SetStatus($"Fetching chapter list from {mangaConnector.Name}");
         
         // Retrieve available Chapters from Connector
         (Chapter chapter, MangaConnectorId<Chapter> chapterId)[] allChapters =
@@ -76,6 +82,7 @@ public class RetrieveMangaChaptersFromMangaconnectorWorker(MangaConnectorId<Mang
             newId.Obj = manga.Chapters.First(ch => ch.Key == newId.ObjId);
         Log.DebugFormat("Got {0} new download-Ids.", newIds.Count);
         
+        SetStatus($"Saving {newChapters.Count} new chapters");
         // Add new ChapterIds to Database
         MangaContext.MangaConnectorToChapter.AddRange(newIds);
 

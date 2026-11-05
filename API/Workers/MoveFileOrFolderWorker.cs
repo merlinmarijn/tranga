@@ -9,6 +9,8 @@ public class MoveFileOrFolderWorker(string toLocation, string fromLocation, IEnu
 {
     public readonly string FromLocation = fromLocation;
     public readonly string ToLocation = toLocation;
+
+    public override string Description => $"Move files from {FromLocation} to {ToLocation}";
     
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private ActionsContext ActionsContext = null!;
@@ -34,6 +36,7 @@ public class MoveFileOrFolderWorker(string toLocation, string fromLocation, IEnu
                 Log.ErrorFormat("File already exists at {0}", ToLocation);
                 return [];
             } 
+            SetStatus("Moving");
             if(fi.Attributes.HasFlag(FileAttributes.Directory))
                 MoveDirectory(fi, ToLocation);
             else

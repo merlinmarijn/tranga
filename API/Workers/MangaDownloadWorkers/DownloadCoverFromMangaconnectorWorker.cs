@@ -15,6 +15,8 @@ public class DownloadCoverFromMangaconnectorWorker(MangaConnectorId<Manga> mcId,
 {
     private readonly string _mangaConnectorIdId = mcId.Key;
 
+    public override string Description => MangaTitle is null ? "Download cover" : $"Download cover for {MangaTitle}";
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
     [SuppressMessage("ReSharper", "InconsistentNaming")]
@@ -43,6 +45,8 @@ public class DownloadCoverFromMangaconnectorWorker(MangaConnectorId<Manga> mcId,
             return []; //TODO Exception?
         }
         Log.Debug($"Getting Cover for MangaConnectorId {mangaConnectorId}...");
+        SetSubject(mangaConnectorId.ObjId, mangaConnectorId.Obj.Name);
+        SetStatus($"Downloading cover from {mangaConnector.Name}");
 
         string? coverFileName = mangaConnector.SaveCoverImageToCache(mangaConnectorId);
         if (coverFileName is null)
@@ -51,6 +55,7 @@ public class DownloadCoverFromMangaconnectorWorker(MangaConnectorId<Manga> mcId,
             return [];
         }
         
+        SetStatus("Saving");
         await MangaContext.Entry(mangaConnectorId).Reference(m => m.Obj).LoadAsync(CancellationToken);
         mangaConnectorId.Obj.CoverFileNameInCache = coverFileName;
 

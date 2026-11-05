@@ -18,7 +18,18 @@ public record Worker(
     string? MangaTitle = null,
     string? ChapterId = null,
     string? ChapterNumber = null,
-    string? ChapterTitle = null) : Identifiable(Key)
+    string? ChapterTitle = null,
+    string Type = "",
+    string Description = "",
+    string? StatusMessage = null,
+    int? ProgressCurrent = null,
+    int? ProgressTotal = null,
+    DateTime? StartedAt = null,
+    DateTime? FinishedAt = null,
+    bool IsPeriodic = false,
+    TimeSpan? Interval = null,
+    DateTime? LastExecution = null,
+    DateTime? NextExecution = null) : Identifiable(Key)
 {
     /// <summary>
     /// Workers this worker depends on having ran.
@@ -62,4 +73,53 @@ public record Worker(
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ChapterTitle { get; init; } = ChapterTitle;
+
+    /// <summary>
+    /// Worker class name without the "Worker" suffix.
+    /// </summary>
+    [Required]
+    [Description("Worker class name without the \"Worker\" suffix.")]
+    public string Type { get; init; } = Type;
+
+    /// <summary>
+    /// Human-readable description of what the Worker does.
+    /// </summary>
+    [Required]
+    [Description("Human-readable description of what the Worker does.")]
+    public string Description { get; init; } = Description;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [Description("Current step of the Worker.")]
+    public string? StatusMessage { get; init; } = StatusMessage;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ProgressCurrent { get; init; } = ProgressCurrent;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ProgressTotal { get; init; } = ProgressTotal;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? StartedAt { get; init; } = StartedAt;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? FinishedAt { get; init; } = FinishedAt;
+
+    /// <summary>
+    /// Worker runs repeatedly at Interval.
+    /// </summary>
+    [Required]
+    [Description("Worker runs repeatedly at Interval.")]
+    public bool IsPeriodic { get; init; } = IsPeriodic;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [Description("Interval at which Worker runs.")]
+    public TimeSpan? Interval { get; init; } = Interval;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [Description("Timestamp when Worker executed last.")]
+    public DateTime? LastExecution { get; init; } = LastExecution;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [Description("Timestamp when Worker is scheduled to execute next.")]
+    public DateTime? NextExecution { get; init; } = NextExecution;
 }

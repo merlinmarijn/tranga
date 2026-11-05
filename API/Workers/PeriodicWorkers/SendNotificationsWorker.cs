@@ -15,6 +15,8 @@ public class SendNotificationsWorker(TimeSpan? interval = null, IEnumerable<Base
 {
     public DateTime LastExecution { get; set; } = DateTime.UnixEpoch;
     public TimeSpan Interval { get; set; } = interval??Constants.NotificationSendInterval;
+
+    public override string Description => "Send notifications";
     
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private NotificationsContext NotificationsContext = null!;
@@ -27,6 +29,7 @@ public class SendNotificationsWorker(TimeSpan? interval = null, IEnumerable<Base
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
         Log.Debug("Sending notifications...");
+        SetStatus("Loading unsent notifications");
         if (await NotificationsContext.Notifications.Where(n => !n.IsSent).ToListAsync(CancellationToken) is not
             { Count: > 0 } unsentNotifications)
         {
@@ -36,6 +39,7 @@ public class SendNotificationsWorker(TimeSpan? interval = null, IEnumerable<Base
         List<NotificationConnector> connectors = await NotificationsContext.NotificationConnectors.ToListAsync(CancellationToken);
         
         Log.DebugFormat("Sending {0} notifications to {1} connectors...", unsentNotifications.Count, connectors.Count);
+        SetStatus($"Sending {unsentNotifications.Count} notifications to {connectors.Count} connectors");
 
         foreach (var groupedNotification in unsentNotifications.GroupBy(n => n.Title, n => n).Select(g => new { Title = g.Key, Notifications = g.ToList() }))
         {

@@ -15,6 +15,8 @@ public class UpdateCoversWorker(TimeSpan? interval = null, IEnumerable<BaseWorke
 {
     public DateTime LastExecution { get; set; } = DateTime.UnixEpoch;
     public TimeSpan Interval { get; set; } = interval ?? TimeSpan.FromHours(6);
+
+    public override string Description => "Update covers";
     
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
@@ -26,8 +28,10 @@ public class UpdateCoversWorker(TimeSpan? interval = null, IEnumerable<BaseWorke
     
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
+        SetStatus("Loading monitored series");
         List<MangaConnectorId<Manga>> manga = await MangaContext.MangaConnectorToManga.Where(mcId => mcId.UseForDownload).ToListAsync(CancellationToken);
         List<BaseWorker> newWorkers = manga.Select(m => new DownloadCoverFromMangaconnectorWorker(m)).ToList<BaseWorker>();
+        SetStatus($"Queueing cover downloads for {newWorkers.Count} series");
         return newWorkers.ToArray();
     }
 }

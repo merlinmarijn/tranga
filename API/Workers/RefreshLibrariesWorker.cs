@@ -8,6 +8,8 @@ namespace API.Workers;
 public class RefreshLibrariesWorker(IEnumerable<BaseWorker>? dependsOn = null) : BaseWorkerWithContexts(dependsOn)
 {
     public static DateTime LastRefresh { get; set; } = DateTime.UnixEpoch;
+
+    public override string Description => "Refresh Komga/Kavita libraries";
     
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private LibraryContext LibraryContext = null!;
@@ -22,8 +24,11 @@ public class RefreshLibrariesWorker(IEnumerable<BaseWorker>? dependsOn = null) :
         Log.Debug("Refreshing libraries...");
         LastRefresh = DateTime.UtcNow;
         List<LibraryConnector> libraries = await LibraryContext.LibraryConnectors.ToListAsync(CancellationToken);
-        foreach (LibraryConnector connector in libraries)
-            await connector.UpdateLibrary(CancellationToken);
+        for (int i = 0; i < libraries.Count; i++)
+        {
+            SetStatus($"Refreshing {libraries[i].LibraryType} at {libraries[i].BaseUrl}", i, libraries.Count);
+            await libraries[i].UpdateLibrary(CancellationToken);
+        }
         Log.Debug("Libraries Refreshed...");
         return [];
     }

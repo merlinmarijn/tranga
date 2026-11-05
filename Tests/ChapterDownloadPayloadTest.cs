@@ -34,9 +34,13 @@ public class ChapterDownloadPayloadTest
             Manga manga = new("Test", "", "", MangaReleaseStatus.Unreleased, [], [], [], []);
             Chapter chapter = new(manga, "1", null);
 
+            List<string> statuses = [];
             Assert.Null(await ChapterExporter.Export(new ImagePagesPayload(["https://example.test/1.png"]),
-                new ImageConnector(), chapter, path, null, () => Task.CompletedTask, CancellationToken.None));
+                new ImageConnector(), chapter, path, null, () => Task.CompletedTask, CancellationToken.None,
+                (status, _, _) => statuses.Add(status)));
 
+            Assert.Contains("Downloading page 1/1", statuses);
+            Assert.Contains("Packaging archive: page 1/1", statuses);
             using ZipArchive archive = ZipFile.OpenRead(path);
             Assert.NotNull(archive.GetEntry("0.jpg"));
             Assert.Equal(Constants.CreateComicInfoXml, archive.GetEntry("ComicInfo.xml") is not null);

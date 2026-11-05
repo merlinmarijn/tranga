@@ -5118,9 +5118,12 @@
         "required": [
           "dependencies",
           "dependenciesFulfilled",
+          "description",
+          "isPeriodic",
           "key",
           "missingDependencies",
-          "state"
+          "state",
+          "type"
         ],
         "type": "object",
         "properties": {
@@ -5163,6 +5166,63 @@
           },
           "chapterTitle": {
             "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Worker class name without the \"Worker\" suffix."
+          },
+          "description": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Human-readable description of what the Worker does."
+          },
+          "statusMessage": {
+            "type": "string",
+            "description": "Current step of the Worker.",
+            "nullable": true
+          },
+          "progressCurrent": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "progressTotal": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "isPeriodic": {
+            "type": "boolean",
+            "description": "Worker runs repeatedly at Interval."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Interval at which Worker runs.",
+            "format": "date-span",
+            "nullable": true
+          },
+          "lastExecution": {
+            "type": "string",
+            "description": "Timestamp when Worker executed last.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "nextExecution": {
+            "type": "string",
+            "description": "Timestamp when Worker is scheduled to execute next.",
+            "format": "date-time",
             "nullable": true
           },
           "key": {

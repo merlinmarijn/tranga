@@ -10,6 +10,8 @@ public class CleanupMangaCoversWorker(TimeSpan? interval = null, IEnumerable<Bas
     public DateTime LastExecution { get; set; } = DateTime.UnixEpoch;
     public TimeSpan Interval { get; set; } = interval ?? TimeSpan.FromHours(24);
 
+    public override string Description => "Clean up unused cover images";
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
 
@@ -21,6 +23,7 @@ public class CleanupMangaCoversWorker(TimeSpan? interval = null, IEnumerable<Bas
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
         Log.Info("Removing stale files...");
+        SetStatus("Removing unused cover images");
         string[] usedFiles = await MangaContext.Mangas.Where(m => m.CoverFileNameInCache != null).Select(m => m.CoverFileNameInCache!).ToArrayAsync(CancellationToken);
         CleanupImageCache(usedFiles, TrangaSettings.CoverImageCacheOriginal);
         CleanupImageCache(usedFiles, TrangaSettings.CoverImageCacheLarge);

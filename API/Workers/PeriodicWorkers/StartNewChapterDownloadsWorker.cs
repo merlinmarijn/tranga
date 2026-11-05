@@ -22,6 +22,8 @@ public class StartNewChapterDownloadsWorker(TimeSpan? interval = null, IEnumerab
     private ActionsContext ActionsContext = null!;
     private static bool _backoffSeeded;
 
+    public override string Description => "Start new chapter downloads";
+
     protected override void SetContexts(IServiceScope serviceScope)
     {
         MangaContext = GetContext<MangaContext>(serviceScope);
@@ -52,6 +54,7 @@ public class StartNewChapterDownloadsWorker(TimeSpan? interval = null, IEnumerab
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
         Log.Debug("Checking for missing chapters...");
+        SetStatus("Looking for missing chapters");
         await SeedBackoffOnce();
         
         // Get missing chapters
@@ -74,6 +77,7 @@ public class StartNewChapterDownloadsWorker(TimeSpan? interval = null, IEnumerab
 
         // Create new jobs
         List<BaseWorker> newWorkers = newDownloadChapters.Select(mcId => new DownloadChapterFromMangaconnectorWorker(mcId)).ToList<BaseWorker>();
+        SetStatus($"Starting {newWorkers.Count} of {missingChapters.Count} missing chapters");
         
         return newWorkers.ToArray();
     }

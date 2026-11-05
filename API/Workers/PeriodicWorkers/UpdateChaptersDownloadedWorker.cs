@@ -12,6 +12,8 @@ public class UpdateChaptersDownloadedWorker(TimeSpan? interval = null, IEnumerab
 {
     public DateTime LastExecution { get; set; } = DateTime.UnixEpoch;
     public TimeSpan Interval { get; set; } = interval??TimeSpan.FromDays(1);
+
+    public override string Description => "Check downloaded chapter files on disk";
     
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
@@ -26,6 +28,7 @@ public class UpdateChaptersDownloadedWorker(TimeSpan? interval = null, IEnumerab
         try
         {
             Log.Debug("Checking chapter files...");
+            SetStatus("Loading chapters");
             List<Chapter> chapters = await MangaContext.Chapters
                 .IgnoreAutoIncludes()
                 .Include(chapter => chapter.ParentManga)
@@ -35,8 +38,10 @@ public class UpdateChaptersDownloadedWorker(TimeSpan? interval = null, IEnumerab
                 .AsSplitQuery()
                 .ToListAsync(CancellationToken);
             Log.DebugFormat("Checking {0} chapters...", chapters.Count);
-            foreach (Chapter chapter in chapters)
+            for (int i = 0; i < chapters.Count; i++)
             {
+                Chapter chapter = chapters[i];
+                SetStatus($"Checking chapter file {i + 1}/{chapters.Count}", i, chapters.Count);
                 try
                 {
                     chapter.CheckDownloadedOnDisk();
@@ -47,6 +52,7 @@ public class UpdateChaptersDownloadedWorker(TimeSpan? interval = null, IEnumerab
                 }
             }
 
+            SetStatus("Saving");
             if(await MangaContext.Sync(CancellationToken, GetType(), System.Reflection.MethodBase.GetCurrentMethod()?.Name) is { success: false } e)
                 Log.ErrorFormat("Failed to save database changes: {0}", e.exceptionMessage);
 

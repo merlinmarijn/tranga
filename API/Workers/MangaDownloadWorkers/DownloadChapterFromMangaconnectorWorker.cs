@@ -20,6 +20,8 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
 {
     public readonly string ChapterIdId = chId.Key;
 
+    public override string Description => MangaTitle is null ? "Download chapter" : $"Download {MangaTitle} chapter {ChapterNumber}";
+
     // Keyed by Chapter.Key. In memory, seeded from ChapterDownloadFailed action records on startup (see SeedBackoff).
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Failures, DateTime RetryAfter)> FailureBackoff = new();
 
@@ -56,6 +58,7 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
         Log.Debug($"Downloading chapter for MangaConnectorId {ChapterIdId}...");
+        SetStatus("Loading chapter");
         // Getting MangaConnector info
         if (await MangaContext.MangaConnectorToChapter
                 .Include(id => id.Obj)
@@ -75,6 +78,7 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
         }
         
         Chapter chapter = mangaConnectorId.Obj;
+        SetSubject(chapter.ParentMangaId, chapter.ParentManga.Name, chapter.Key, chapter.ChapterNumber, chapter.Title);
         try
         {
             return await DownloadChapter(mangaConnectorId, chapter);
@@ -100,6 +104,7 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
             return await RecordFailure(chapter, "series has no file library set");
         
         Log.Info($"Getting chapter payload for {chapter}");
+        SetStatus($"Fetching page list from {mangaConnector.Name}");
         ChapterDownloadPayload payload;
         try
         {
@@ -132,10 +137,11 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
                 Log.Debug($"Loading collections {chapter}");
                 foreach (CollectionEntry collectionEntry in MangaContext.Entry(chapter.ParentManga).Collections)
                     await collectionEntry.LoadAsync(CancellationToken);
-            }, CancellationToken);
+            }, CancellationToken, SetStatus);
         if (exportError is not null)
             return await RecordFailure(chapter, exportError);
 
+        SetStatus("Saving");
         chapter.Downloaded = true;
         FailureBackoff.TryRemove(chapter.Key, out _);
         chapter.FileName = new FileInfo(saveArchiveFilePath).Name;
@@ -144,6 +150,7 @@ public class DownloadChapterFromMangaconnectorWorker(MangaConnectorId<Chapter> c
 
         if (chapter.ParentManga.ContentKind == ContentKind.Novel)
         {
+            SetStatus("Rebuilding series EPUB");
             Manga novel = await MangaContext.MangaWithMetadata().Include(manga => manga.Chapters)
                 .SingleAsync(manga => manga.Key == chapter.ParentMangaId, CancellationToken);
             if (!await ChapterExporter.ExportNovelSeries(novel, novel.Chapters.Where(novelChapter => novelChapter.Downloaded), CancellationToken))

@@ -24,10 +24,31 @@ public abstract class BaseWorker : Identifiable
     /// </summary>
     internal IEnumerable<BaseWorker> MissingDependencies => DependsOn.Where(d => d.State < WorkerExecutionState.Completed);
     public bool AllDependenciesFulfilled => DependsOn.All(d => d.State >= WorkerExecutionState.Completed);
-    internal WorkerExecutionState State { get; private set; }
+    internal WorkerExecutionState State { get; private set; } = WorkerExecutionState.Created; // default(0) is Failed
     private CancellationTokenSource _cancellationTokenSource = new ();
     protected CancellationToken CancellationToken => _cancellationTokenSource.Token;
     protected ILog Log { get; init; }
+
+    /// <summary>Worker class name without the "Worker" suffix.</summary>
+    public string Type => GetType().Name is var name && name.EndsWith("Worker") ? name[..^"Worker".Length] : GetType().Name;
+    /// <summary>Human-readable description of what this worker does.</summary>
+    public virtual string Description => Type;
+
+    // ponytail: one immutable snapshot swapped atomically; concurrent writers may drop an update, fine for display-only telemetry.
+    private volatile WorkerTelemetry _telemetry = new();
+    public WorkerTelemetry Telemetry => _telemetry;
+    internal void SetStatus(string? message, int? current = null, int? total = null) =>
+        _telemetry = _telemetry with { StatusMessage = message, ProgressCurrent = current, ProgressTotal = total };
+
+    public string? MangaId { get; private set; }
+    public string? MangaTitle { get; private set; }
+    public string? ChapterId { get; private set; }
+    public string? ChapterNumber { get; private set; }
+    public string? ChapterTitle { get; private set; }
+    internal void SetSubject(string? mangaId, string? mangaTitle, string? chapterId = null, string? chapterNumber = null, string? chapterTitle = null)
+    {
+        (MangaId, MangaTitle, ChapterId, ChapterNumber, ChapterTitle) = (mangaId, mangaTitle, chapterId, chapterNumber, chapterTitle);
+    }
 
     /// <summary>
     /// Stops worker, and marks as <see cref="WorkerExecutionState"/>.Cancelled
@@ -81,6 +102,8 @@ public abstract class BaseWorker : Identifiable
             State = WorkerExecutionState.Waiting;
             
             // Wait for dependencies, start them if necessary
+            if (MissingDependencies.ToArray() is { Length: > 0 } missing)
+                _telemetry = new($"Waiting for {missing.Length} {(missing.Length == 1 ? "dependency" : "dependencies")}: {string.Join(", ", missing.Select(d => d.Description))}");
             BaseWorker[] missingDependenciesThatNeedStarting = MissingDependencies.Where(d => d.State < WorkerExecutionState.Waiting).ToArray();
             if(missingDependenciesThatNeedStarting.Any())
                 return new (() => missingDependenciesThatNeedStarting);
@@ -91,6 +114,7 @@ public abstract class BaseWorker : Identifiable
             // Run the actual work
             Log.InfoFormat("Running {0}", ToString());
             DateTime startTime = DateTime.UtcNow;
+            _telemetry = new(StartedAt: startTime);
             State = WorkerExecutionState.Running;
             Task<BaseWorker[]> task = DoWorkInternal();
             task.GetAwaiter().OnCompleted(Finish(startTime, callback));
@@ -109,6 +133,10 @@ public abstract class BaseWorker : Identifiable
         Log.InfoFormat("Completed {0}\n\t{1} ms", this, endTime.Subtract(startTime).TotalMilliseconds);
         if (State == WorkerExecutionState.Running) // keep Cancelled/Failed visible
             this.State = WorkerExecutionState.Completed;
+        // Completed: the last step is no longer happening. Failed/Cancelled: keep the step it stopped at.
+        _telemetry = State == WorkerExecutionState.Completed
+            ? new(StartedAt: _telemetry.StartedAt, FinishedAt: endTime)
+            : _telemetry with { FinishedAt = endTime };
         if(this is IPeriodic periodic)
             periodic.LastExecution = DateTime.UtcNow;
         callback?.Invoke();
@@ -137,3 +165,7 @@ public enum WorkerExecutionState
     Running = 128,
     Completed = 192
 }
+
+/// <summary>Live progress of a <see cref="BaseWorker"/> run.</summary>
+public sealed record WorkerTelemetry(string? StatusMessage = null, int? ProgressCurrent = null, int? ProgressTotal = null,
+    DateTime? StartedAt = null, DateTime? FinishedAt = null);

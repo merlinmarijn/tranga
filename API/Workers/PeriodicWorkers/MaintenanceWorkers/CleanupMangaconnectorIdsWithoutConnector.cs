@@ -9,6 +9,8 @@ public class CleanupMangaconnectorIdsWithoutConnector : BaseWorkerWithContexts
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
 
+    public override string Description => "Clean up data of removed connectors";
+
     protected override void SetContexts(IServiceScope serviceScope)
     {
         MangaContext = GetContext<MangaContext>(serviceScope);
@@ -17,6 +19,7 @@ public class CleanupMangaconnectorIdsWithoutConnector : BaseWorkerWithContexts
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
         Log.Info("Cleaning up old connector-data...");
+        SetStatus("Removing chapter and series IDs of unavailable connectors");
         string[] connectorNames = Tranga.MangaConnectors.Select(c => c.Name).ToArray();
         int deletedChapterIds = await MangaContext.MangaConnectorToChapter.Where(chId => connectorNames.All(n => n != chId.MangaConnectorName)).ExecuteDeleteAsync(CancellationToken);
         Log.InfoFormat("Deleted {0} chapterIds.", deletedChapterIds);

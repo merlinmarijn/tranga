@@ -16,6 +16,8 @@ public class CheckForNewChaptersWorker(TimeSpan? interval = null, IEnumerable<Ba
     
     private static readonly Dictionary<string, DateTime> FinishedLastChecked = new();
 
+    public override string Description => "Check for new chapters";
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
 
@@ -27,6 +29,7 @@ public class CheckForNewChaptersWorker(TimeSpan? interval = null, IEnumerable<Ba
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
         Log.Debug("Checking for new chapters...");
+        SetStatus("Loading monitored series");
         List<MangaConnectorId<Manga>> connectorIdsManga = await MangaContext.MangaConnectorToManga
             .Include(id => id.Obj)
             .Where(id => id.UseForDownload)
@@ -47,6 +50,7 @@ public class CheckForNewChaptersWorker(TimeSpan? interval = null, IEnumerable<Ba
             return false;
         });
         Log.DebugFormat("Creating {0} update jobs...", connectorIdsManga.Count);
+        SetStatus($"Queueing chapter list refresh for {connectorIdsManga.Count} series");
 
         List<BaseWorker> newWorkers = connectorIdsManga.Select(id => new RetrieveMangaChaptersFromMangaconnectorWorker(id, Tranga.Settings.DownloadLanguage))
             .ToList<BaseWorker>();

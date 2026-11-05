@@ -13,6 +13,8 @@ public class RemoveOldNotificationsWorker(TimeSpan? interval = null, IEnumerable
     public DateTime LastExecution { get; set; } = DateTime.UnixEpoch;
     public TimeSpan Interval { get; set; } = interval ??  TimeSpan.FromHours(1);
 
+    public override string Description => "Remove sent notifications";
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private NotificationsContext NotificationsContext = null!;
 
@@ -24,6 +26,7 @@ public class RemoveOldNotificationsWorker(TimeSpan? interval = null, IEnumerable
     protected override async Task<BaseWorker[]> DoWorkInternal()
     {
         Log.Debug("Removing old notifications...");
+        SetStatus("Removing sent notifications");
         int removed = await NotificationsContext.Notifications.Where(n => n.IsSent).ExecuteDeleteAsync(CancellationToken);
         Log.DebugFormat("Removed {0} old notifications...", removed);
         

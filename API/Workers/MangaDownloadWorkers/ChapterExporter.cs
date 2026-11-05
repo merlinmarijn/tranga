@@ -21,16 +21,18 @@ internal static class ChapterExporter
 
     /// <returns>null on success, otherwise a single-line reason why the export failed</returns>
     internal static async Task<string?> Export(ChapterDownloadPayload payload, MangaConnector connector, Chapter chapter,
-        string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken)
+        string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken,
+        Action<string, int?, int?>? progress = null)
     {
+        progress ??= (_, _, _) => { };
         DateTime? before = File.Exists(outputPath) ? File.GetLastWriteTimeUtc(outputPath) : null;
         string? error;
         try
         {
             error = await (payload switch
             {
-                ImagePagesPayload pages => ExportManga(pages, connector, chapter, outputPath, referrer, beforeArchive, cancellationToken),
-                ChapterHtmlPayload html => ExportNovel(html, chapter, outputPath, beforeArchive, cancellationToken),
+                ImagePagesPayload pages => ExportManga(pages, connector, chapter, outputPath, referrer, beforeArchive, cancellationToken, progress),
+                ChapterHtmlPayload html => ExportNovel(html, chapter, outputPath, beforeArchive, cancellationToken, progress),
                 _ => Task.FromResult<string?>($"unsupported payload type {payload.GetType().Name}")
             });
         }
@@ -55,7 +57,8 @@ internal static class ChapterExporter
 
 
     private static async Task<string?> ExportManga(ImagePagesPayload pages, MangaConnector connector, Chapter chapter,
-        string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken)
+        string outputPath, string? referrer, Func<Task> beforeArchive, CancellationToken cancellationToken,
+        Action<string, int?, int?> progress)
     {
         if (pages.Urls.Length < 1)
         {
@@ -69,6 +72,7 @@ internal static class ChapterExporter
         {
             string imageUrl = pages.Urls[index];
             string imageLabel = $"image {index + 1}/{pages.Urls.Length}";
+            progress($"Downloading page {index + 1}/{pages.Urls.Length}", index, pages.Urls.Length);
             try
             {
                 (Stream? stream, HttpStatusCode status) = await connector.DownloadImage(imageUrl, cancellationToken, referrer);
@@ -91,6 +95,7 @@ internal static class ChapterExporter
 
         try
         {
+            progress("Preparing series folder and cover", null, null);
             await beforeArchive();
             if (File.Exists(outputPath))
             {
@@ -112,6 +117,7 @@ internal static class ChapterExporter
             for (int index = 0; index < images.Count; index++)
             {
                 Log.Debug($"Packaging images to archive {chapter} , image {index}");
+                progress($"Packaging archive: page {index + 1}/{images.Count}", index, images.Count);
                 await using Stream zipStream = archive.CreateEntry($"{index}.jpg").Open();
                 images[index].Position = 0;
                 await images[index].CopyToAsync(zipStream, cancellationToken);
@@ -131,11 +137,13 @@ internal static class ChapterExporter
     }
 
     private static async Task<string?> ExportNovel(ChapterHtmlPayload payload, Chapter chapter, string outputPath,
-        Func<Task> beforeArchive, CancellationToken cancellationToken)
+        Func<Task> beforeArchive, CancellationToken cancellationToken, Action<string, int?, int?> progress)
     {
         if (string.IsNullOrWhiteSpace(payload.Html))
             return "connector returned empty chapter text";
+        progress("Preparing series folder and cover", null, null);
         await beforeArchive();
+        progress("Writing EPUB", null, null);
         if (File.Exists(outputPath))
             File.Delete(outputPath);
 
