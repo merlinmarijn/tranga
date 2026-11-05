@@ -14,6 +14,8 @@ public class CheckForNewChaptersWorker(TimeSpan? interval = null, IEnumerable<Ba
     public DateTime LastExecution { get; set; } = DateTime.UnixEpoch;
     public TimeSpan Interval { get; set; } = interval??Constants.CheckForNewChaptersInterval;
     
+    private static readonly Dictionary<string, DateTime> FinishedLastChecked = new();
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     private MangaContext MangaContext = null!;
 
@@ -29,6 +31,21 @@ public class CheckForNewChaptersWorker(TimeSpan? interval = null, IEnumerable<Ba
             .Include(id => id.Obj)
             .Where(id => id.UseForDownload)
             .ToListAsync(CancellationToken);
+        // Finished series (completed/cancelled, every chapter downloaded) are only re-checked occasionally, to catch extras
+        HashSet<string> finishedMangaIds = (await MangaContext.Mangas
+            .Where(m => (m.ReleaseStatus == MangaReleaseStatus.Completed || m.ReleaseStatus == MangaReleaseStatus.Cancelled)
+                        && m.Chapters.Any() && m.Chapters.All(c => c.Downloaded))
+            .Select(m => m.Key)
+            .ToListAsync(CancellationToken)).ToHashSet();
+        DateTime now = DateTime.UtcNow;
+        connectorIdsManga.RemoveAll(id =>
+        {
+            if (!finishedMangaIds.Contains(id.ObjId)) return false;
+            // ponytail: in-memory, so each finished series gets one check after restart; persist if that matters
+            if (FinishedLastChecked.TryGetValue(id.Key, out DateTime last) && now - last < Constants.FinishedSeriesCheckInterval) return true;
+            FinishedLastChecked[id.Key] = now;
+            return false;
+        });
         Log.DebugFormat("Creating {0} update jobs...", connectorIdsManga.Count);
 
         List<BaseWorker> newWorkers = connectorIdsManga.Select(id => new RetrieveMangaChaptersFromMangaconnectorWorker(id, Tranga.Settings.DownloadLanguage))

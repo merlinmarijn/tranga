@@ -27,4 +27,5 @@ public struct Constants
     
     public static readonly TimeSpan NotificationSendInterval = TimeSpan.FromMinutes(int.Parse(Environment.GetEnvironmentVariable("MINUTES_BETWEEN_NOTIFICATIONS") ?? "1"));
     public static readonly TimeSpan CheckForNewChaptersInterval = TimeSpan.FromHours(int.Parse(Environment.GetEnvironmentVariable("HOURS_BETWEEN_NEW_CHAPTERS_CHECK") ?? "3"));
+    public static readonly TimeSpan FinishedSeriesCheckInterval = TimeSpan.FromDays(int.Parse(Environment.GetEnvironmentVariable("DAYS_BETWEEN_FINISHED_SERIES_CHECK") ?? "7"));
 }
